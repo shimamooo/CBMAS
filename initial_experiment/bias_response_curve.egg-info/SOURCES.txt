@@ -1,7 +1,0 @@
-bias_response_curve.py
-setup.py
-bias_response_curve.egg-info/PKG-INFO
-bias_response_curve.egg-info/SOURCES.txt
-bias_response_curve.egg-info/dependency_links.txt
-bias_response_curve.egg-info/entry_points.txt
-bias_response_curve.egg-info/top_level.txt
