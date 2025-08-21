@@ -1,3 +1,27 @@
+# Core numerical and plotting
+numpy==2.1.1
+matplotlib==3.9.2
+
+# PyTorch stack (CUDA version should match your system if using GPU)
+torch==2.4.0
+torchvision==0.19.0
+torchaudio==2.4.0
+
+# Transformers ecosystem
+transformers==4.44.2
+datasets==2.20.0
+
+# TransformerLens and its common typing deps
+transformer_lens==1.15.0
+jaxtyping==0.2.33
+typeguard==4.3.0
+
+# Data processing
+pandas==2.2.2
+
+# Testing
+pytest==8.3.2
+
 torch==2.4.0
 torchvision==0.19.0
 torchaudio==2.4.0
