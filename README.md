@@ -1,98 +1,92 @@
-# bias-probing
+# BRC Experiment (Modularized)
 
-## Bias Response Curve (BRC) experiment
+A modular, production-style refactor of a Bias-Repelling Control (BRC) experiment built on TransformerLens and GPT-2 small. It loads Winogender prompts, constructs steering vectors, sweeps steering strengths (alpha), and plots logit differences for He vs She under a clean logit lens.
 
-This repository contains a Bias Response Curve (BRC) experiment that measures how adding a gender steering vector to a GPT-2 Small model's residual stream affects next-token preferences between the tokens " he" and " she".
+## Features
+- Clean module boundaries: config, data, model, steering, plotting, experiment, CLI
+- Deterministic runs when possible (cuBLAS/CUDNN settings and seeds)
+- CLI to run experiments with configurable hyperparameters
+- Quick-start example in `main.py` for fast debugging
+- Saved figures per injection/read layer under `graphs/`
 
-**Primary implementations:**
-- **Version 2 (Current)**: `BRC_Experiment/Version2/BRC_v2.ipynb` - Improved implementation with better structure and comprehensive layer sweeps
-- **Version 1**: `BRC_Experiment/Version1/` - Intermediate iteration
-- **Version 0**: `BRC_Experiment/Version0/` - Original implementation in `BRC/BRC.ipynb`
+## Installation
+1. Python 3.10+ recommended
+2. Create a virtual environment
+```bash
+python -m venv .venv
+source .venv/bin/activate
+```
+3. Install dependencies
+```bash
+pip install -r requirements.txt
+```
+If you need CUDA-enabled PyTorch, adjust the torch/torchvision/torchaudio wheels as per your system.
 
-### What the experiment measures
+## Project Structure
+```
+BRC_Experiment/
+  Modularized/
+    __init__.py
+    config.py          # ExperimentConfig dataclass
+    utils.py           # device, determinism, alpha grid, layer parsing
+    data.py            # Winogender loader and prompt pairs
+    model.py           # HookedTransformer loader and pronoun token ids
+    steering.py        # residual capture, vector building, steering sweep
+    plotting.py        # plot_and_save_brc_curves
+    experiment.py      # Experiment orchestration
+    cli.py             # CLI entrypoint
+    main.py            # Quick-start runner or delegate to CLI
+```
 
-- **Primary metric (Δ_logit)**: `logit(" he") − logit(" she")` at the decision position \(t\*\), computed via a clean logit lens (apply `ln_final` then `unembed` on a captured residual state).
-- **Bias Response Curve**: Sweep a scalar steering coefficient **α** and inject `α · v_bias` into the residual stream at a chosen layer/hook site; record Δ_logit across α to see a dose–response curve.
-- **Slopes near α ≈ 0**: Fit a line to the four points with smallest |α| to estimate sensitivity. Expect a non-zero slope for the bias direction and ~0 for controls.
-- **Controls**: Compare the bias direction against a random unit vector and its component orthogonal to the bias direction.
+## Quick Start
+Run a small, fast example (layers 0→1, alphas -1,0) to verify setup:
+```bash
+python BRC_Experiment/Modularized/main.py
+```
+Outputs are saved under `graphs_debug/`.
 
-### Core setup
+## Full CLI Usage
+Show help:
+```bash
+python -m BRC_Experiment.Modularized.cli --help
+```
+Run with defaults:
+```bash
+python -m BRC_Experiment.Modularized.cli
+```
+Custom hyperparameters:
+```bash
+python -m BRC_Experiment.Modularized.cli \
+  --model-name gpt2-small \
+  --prefix "The doctor said that " \
+  --prepend-bos \
+  --inject-site hook_resid_mid \
+  --read-site hook_resid_post \
+  --alpha-start -10 --alpha-stop 10 --alpha-step 0.5 \
+  --inject-layers 0-4 \
+  --read-layers 1-6 \
+  --seed 42 \
+  --out-dir graphs
+```
+Layer specs for `--inject-layers` and `--read-layers`:
+- `all` (default)
+- Comma list: `0,2,5`
+- Range: `3-8` (start inclusive, end exclusive)
 
-- **Model/tooling**: GPT-2 Small via TransformerLens (`HookedTransformer`).
-- **Decision position (t\*)**: The next-token position immediately after the input prefix; BOS handling is explicit and consistent.
-- **Tokenization details**: Pronoun tokens use a leading space (" he", " she") for tokenizer consistency. BOS can be prepended via `PREPEND_BOS`.
-- **Injection/Read sites**:
-  - Inject a steering vector at `blocks.{INJECT_LAYER}.{INJECT_SITE}` (default: `L3:hook_resid_mid`).
-  - Read logits from `blocks.{READ_LAYER}.{READ_SITE}` via a clean logit lens (default: `L8:hook_resid_post`).
-- **Bias direction (v_bias)**: Contrastive residuals at the pronoun position across a list of neutral prefixes, averaged and unit-normalized. Orientation is flipped so that increasing α increases Δ_logit.
-- **Alpha sweep**: Default grid `[-1.0, …, 0.9]` in steps of `0.1` (including a near-zero value), applied at the decision position only; model weights are not changed.
+## Notes
+- The dataset `oskarvanderwal/winogender` is pulled automatically via `datasets`. Internet access is required the first time.
+- Figures are saved as PNG: `graphs/injL{inj}/brc_injL{inj}_{inject_site}_readL{read}_{read_site}.png`.
+- Determinism is best-effort due to CUDA/BLAS constraints.
 
-### Key improvements in Version 2
+## Testing
+A pytest suite can be created to mock heavy dependencies. Example categories:
+- utils: seeds, device, alpha grid, layer parsing
+- data: dataset loader mocked
+- model: TransformerLens loader mocked
+- steering: fake model for sweeps
+- plotting: file creation
+- experiment: orchestration with monkeypatched components
+- cli: argument plumbing
 
-**BRC_v2** introduces several enhancements over the original implementation:
-
-1. **Comprehensive Layer Sweeps**: Automatically sweeps across all injection/readout layer combinations, generating plots for each valid combination
-2. **Improved File Organization**: Results are organized in a hierarchical directory structure (`graphs/injL{layer}/`) for better organization
-3. **Enhanced Plotting**: Better visualization with improved styling, consistent color schemes, and informative titles
-4. **Streamlined Workflow**: Cleaner function structure and better separation of concerns
-5. **Automatic Vector Generation**: Bias, random, and orthogonal vectors are automatically generated for each injection layer
-6. **Better Error Handling**: More robust implementation with proper device handling and tensor operations
-
-### Outputs
-
-- **Comprehensive layer sweep**: Automatically generates plots for all valid injection/readout layer combinations
-- **Organized file structure**: Results saved under `graphs/injL{injection_layer}/` with descriptive filenames
-- **Enhanced visualizations**: Professional-quality plots with consistent styling and informative annotations
-- **Single-setup curves**: Each plot shows Δ_logit vs α for `bias`, `random`, and `orth` directions with clear labeling
-
-### Reproducing the experiment
-
-1. Install dependencies:
-   ```bash
-   pip install -r requirements.txt
-   ```
-   The notebook also installs `transformer_lens` if missing.
-
-2. **For the latest implementation**: Open and run `BRC_Experiment/Version2/BRC_v2.ipynb` end-to-end. A CUDA GPU is optional but recommended.
-
-3. **For the original implementation**: Use `BRC/BRC.ipynb` (Version 0).
-
-Both notebooks set seeds and use deterministic settings where possible.
-
-### Important implementation notes
-
-- **Clean logit lens vs model head**: The primary measurements use the clean logit lens at the configured read site. A separate sanity check compares this to the model head at the final layer; they only match when reading from the final layer.
-- **Prefix policy**: Prefixes in `PREFIX_LIST` are short neutral contexts (e.g., "The doctor said that "). The pronoun occurs immediately after the prefix; the code computes t\* locally per input.
-- **Determinism**: Seeds are set (`numpy`, `torch`), `CUBLAS_WORKSPACE_CONFIG` is configured, and deterministic algorithms are requested. Exact reproducibility can depend on hardware and library versions.
-- **Version 2 enhancements**: Automatically handles all layer combinations, provides better visualization, and organizes results systematically.
-
-### Customize the study
-
-You can tweak the following in `BRC_Experiment/Version2/BRC_v2.ipynb`:
-
-- `PREPEND_BOS`, `prefix`, and `PREFIX_LIST` (prompt policy)
-- `INJECT_LAYER`, `READ_LAYER`, `INJECT_SITE` (e.g., `hook_resid_mid`), `READ_SITE` (e.g., `hook_resid_post`)
-- `ALPHA_RANGE` (α sweep grid)
-- `inject_layers` and `read_layers` arrays to control which layer combinations to explore
-- Add additional control directions or swap in different contrastive pairs
-
-### Repository layout
-
-- `BRC_Experiment/Version2/BRC_v2.ipynb`: **Current main experiment notebook** with comprehensive layer sweeps and improved visualization
-- `BRC_Experiment/Version1/`: Intermediate iteration artifacts
-- `BRC_Experiment/Version0/`: Earlier iteration artifacts and figures
-- `BRC/BRC.ipynb`: Original experiment notebook (includes a glossary of key terms near the top)
-
-### Example observed values (from default settings shown in the notebook)
-
-- **Version 2**: Automatically generates results for all layer combinations, with plots saved in organized directories
-- **Version 0**: Near-zero slopes (inject L3 mid, read L8 post): `bias ≈ +0.024`, `random ≈ −0.005`, `orth ≈ −0.005`.
-- Ranges differ across prefixes and layers; see saved figures and printed slope summaries for specifics.
-
-### Migration from Version 0 to Version 2
-
-If you're familiar with the original implementation:
-- **Core methodology**: Remains the same - the bias response curve concept and measurement approach are identical
-- **New features**: Version 2 adds automatic layer sweeping, better organization, and enhanced visualization
-- **File structure**: Results are now organized by injection layer in dedicated directories
-- **Function names**: Most function names and interfaces remain the same for compatibility
+## License
+MIT
