@@ -37,6 +37,11 @@ class Experiment:
         )
 
     def run_experiment(self) -> None:
+        # Phase 1: accumulate all curves and compute global y-limits
+        results: list[dict[str, object]] = []
+        global_min: float | None = None
+        global_max: float | None = None
+
         for inj_layer in self.inject_layers:
             vectors = build_vectors(
                 self.model,
@@ -98,18 +103,46 @@ class Experiment:
                 random_diffs = logit_diffs(random_logits, self.he_id, self.she_id)
                 orth_diffs = logit_diffs(orth_logits, self.he_id, self.she_id)
 
-                fig_path = plot_and_save_brc_curves(
-                    bias_diffs,
-                    random_diffs,
-                    orth_diffs,
-                    self.alpha_values,
-                    inj_layer,
-                    read_layer,
-                    self.config.inject_site,
-                    self.config.read_site,
-                    self.config.prepend_bos,
-                    self.config.prefix,
-                    self.config.out_dir,
-                ) # plot and save BRC curves
-                print("Saved:", fig_path) # print path to saved figure
+                # Update global min/max
+                for v in (*bias_diffs, *random_diffs, *orth_diffs):
+                    global_min = v if global_min is None else min(global_min, v)
+                    global_max = v if global_max is None else max(global_max, v)
+
+                results.append(
+                    {
+                        "inj": inj_layer,
+                        "read": read_layer,
+                        "bias": bias_diffs,
+                        "random": random_diffs,
+                        "orth": orth_diffs,
+                    }
+                )
+
+        # Determine fixed y-limits with a small pad
+        if global_min is None or global_max is None:
+            return  # nothing to plot
+        if global_max == global_min:
+            pad = 0.1 if global_max == 0 else abs(global_max) * 0.1
+            fixed_limits = (global_min - pad, global_max + pad)
+        else:
+            yr = global_max - global_min
+            fixed_limits = (global_min - 0.1 * yr, global_max + 0.1 * yr)
+
+        # Phase 2: plot with fixed y-limits for consistency across figures
+        for item in results:
+            fig_path = plot_and_save_brc_curves(
+                item["bias"],  # type: ignore[arg-type]
+                item["random"],  # type: ignore[arg-type]
+                item["orth"],  # type: ignore[arg-type]
+                self.alpha_values,
+                item["inj"],  # type: ignore[arg-type]
+                item["read"],  # type: ignore[arg-type]
+                self.config.inject_site,
+                self.config.read_site,
+                self.config.prepend_bos,
+                self.config.prefix,
+                self.config.out_dir,
+                fixed_y_limits=fixed_limits,
+            )
+            print("Saved:", fig_path)
     
