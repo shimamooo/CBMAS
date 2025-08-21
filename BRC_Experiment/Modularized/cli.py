@@ -2,8 +2,6 @@ import argparse
 from typing import Optional
 
 from BRC_Experiment.Modularized.config import ExperimentConfig
-from BRC_Experiment.Modularized.experiment import Experiment
-from BRC_Experiment.Modularized.utils import parse_layer_spec
 
 
 def build_parser() -> argparse.ArgumentParser:
@@ -32,6 +30,20 @@ def build_parser() -> argparse.ArgumentParser:
 def main(argv: Optional[list[str]] = None) -> None:
     args = build_parser().parse_args(argv)
 
+    # lightweight layer-spec parser to avoid importing utils on --help
+    def _parse_layer_spec(spec: str | None):
+        if spec is None:
+            return None
+        s = spec.strip().lower()
+        if s in ("", "all"):
+            return None
+        if "," in s:
+            return [int(x.strip()) for x in s.split(",") if x.strip()]
+        if "-" in s:
+            a, b = s.split("-", 1)
+            return list(range(int(a), int(b)))
+        return [int(s)]
+
     config = ExperimentConfig(
         model_name=args.model_name,
         prepend_bos=args.prepend_bos,
@@ -41,12 +53,13 @@ def main(argv: Optional[list[str]] = None) -> None:
         alpha_start=args.alpha_start,
         alpha_stop=args.alpha_stop,
         alpha_step=args.alpha_step,
-        inject_layers=parse_layer_spec(args.inject_layers),
-        read_layers=parse_layer_spec(args.read_layers),
+        inject_layers=_parse_layer_spec(args.inject_layers),
+        read_layers=_parse_layer_spec(args.read_layers),
         seed=args.seed,
         out_dir=args.out_dir,
     )
-
+    # Import heavy modules only when actually executing, not on --help
+    from BRC_Experiment.Modularized.experiment import Experiment
     Experiment(config).run_experiment()
 
 
