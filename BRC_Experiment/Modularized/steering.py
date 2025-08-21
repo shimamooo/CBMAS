@@ -121,4 +121,35 @@ def sweep_alpha(
 def logit_diffs(logit_list: List[torch.Tensor], he_id: int, she_id: int) -> List[float]:
     return [float((logits[he_id] - logits[she_id]).item()) for logits in logit_list]
 
+@torch.no_grad()
+def prob_diffs(logit_list: List[torch.Tensor], he_id: int, she_id: int) -> List[float]:
+    """Compute probability differences (He - She) from logits using softmax. Values are bounded between -1 and 1."""
+    diffs = []
+    for logits in logit_list:
+        probs = torch.softmax(logits, dim=-1)
+        # Compute probability difference: P(He) - P(She)
+        prob_diff = float((probs[he_id] - probs[she_id]).item())
+        diffs.append(prob_diff)
+    return diffs
 
+@torch.no_grad()
+def compute_perplexity(logit_list: List[torch.Tensor], target_token_id: int) -> List[float]:
+    """
+    Compute perplexity for each set of logits given a target token.
+    
+    Args:
+        logit_list: List of logit tensors
+        target_token_id: ID of the target token (e.g., he or she)
+    
+    Returns:
+        List of perplexity values
+    """
+    perplexities = []
+    for logits in logit_list:
+        probs = torch.softmax(logits, dim=-1)
+        target_prob = probs[target_token_id].item()
+        target_prob = max(target_prob, 1e-10)
+        # negative log likelihood
+        nll = -torch.log(torch.tensor(target_prob))
+        perplexity = torch.exp(nll).item()
+        perplexities.append(perplexity)
