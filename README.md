@@ -38,14 +38,14 @@ BRC_Experiment/
     main.py            # Quick-start runner or delegate to CLI
 ```
 
-## Quick Start
-Run a small, fast example (layers 0→1, alphas -1,0) to verify setup:
+## Quick Start (no install)
+We ship `main.py` with a built-in import shim, so you can run directly without installing the package:
 ```bash
 python BRC_Experiment/Modularized/main.py
 ```
-Outputs are saved under `graphs_debug/`.
+This runs a small, fast example (layers 0→1, alphas -1,0) and saves outputs to `graphs_debug/`.
 
-## Full CLI Usage
+## Full CLI Usage (optional)
 Show help:
 ```bash
 python -m BRC_Experiment.Modularized.cli --help
@@ -53,6 +53,10 @@ python -m BRC_Experiment.Modularized.cli --help
 Run with defaults:
 ```bash
 python -m BRC_Experiment.Modularized.cli
+```
+If you prefer not to install the package, you can also set `PYTHONPATH` for one-off runs:
+```bash
+PYTHONPATH=$(pwd) python -m BRC_Experiment.Modularized.cli --help
 ```
 Custom hyperparameters:
 ```bash

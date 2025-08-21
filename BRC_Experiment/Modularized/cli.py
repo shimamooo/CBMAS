@@ -47,7 +47,7 @@ def main(argv: Optional[list[str]] = None) -> None:
         out_dir=args.out_dir,
     )
 
-    Experiment(config).run()
+    Experiment(config).run_experiment()
 
 
 if __name__ == "__main__":

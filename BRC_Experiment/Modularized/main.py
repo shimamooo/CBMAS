@@ -8,9 +8,9 @@ Usage examples:
 If run without arguments, executes a small quick-start experiment for debugging.
 """
 
-from BRC_Experiment.Modularized.experiment import Experiment
-from BRC_Experiment.Modularized.config import ExperimentConfig
 from BRC_Experiment.Modularized.cli import main as cli_main
+from BRC_Experiment.Modularized.config import ExperimentConfig
+from BRC_Experiment.Modularized.experiment import Experiment
 import sys
 from pathlib import Path
 
