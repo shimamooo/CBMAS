@@ -31,6 +31,9 @@ def build_parser() -> argparse.ArgumentParser:
                    help="Steer only the last token position instead of all tokens (default: steer all tokens)")
     p.add_argument("--use-log-scale", action="store_true", 
                    help="Force log scale for plotting (automatically enabled for prob_diffs metric)")
+    p.add_argument("--dataset", type=str, default="reassurance", 
+                   choices=["winogender", "reassurance"],
+                   help="Dataset to use: winogender (he/she bias) or reassurance (supportive/unsupportive responses)")
     return p
 
 
@@ -67,6 +70,7 @@ def main(argv: Optional[list[str]] = None) -> None:
         metric=args.metric,
         steer_all_tokens=not args.steer_last_token_only,
         use_log_scale=args.use_log_scale,
+        dataset=args.dataset,
     )
     # Import heavy modules only when actually executing, not on --help
     from BRC_Experiment.Modularized.experiment import Experiment

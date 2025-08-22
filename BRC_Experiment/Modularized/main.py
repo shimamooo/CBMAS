@@ -37,6 +37,7 @@ def run_quickstart() -> None:
         metric="prob_diffs",  # Can also be "logit_diffs" or "compute_perplexity"  
         steer_all_tokens=True,  # Set to True to steer all tokens instead of just the last
         use_log_scale=False,  # Log scale auto-enabled for prob_diffs; set to True to force for other metrics
+        dataset="reassurance",  # Can also be "winogender" for he/she bias experiments
     )
     Experiment(cfg).run_experiment()
 

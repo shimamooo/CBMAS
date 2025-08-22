@@ -30,5 +30,8 @@ class ExperimentConfig:
     
     # Whether to use log scale for plotting (useful for very small values)
     use_log_scale: bool = False
+    
+    # Dataset to use: "winogender" or "reassurance"
+    dataset: str = "reassurance"
 
 

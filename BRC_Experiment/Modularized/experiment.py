@@ -4,8 +4,8 @@ from typing import Iterable, List, Sequence
 import torch
 
 from BRC_Experiment.Modularized.config import ExperimentConfig
-from BRC_Experiment.Modularized.data import load_winogender_pairs
-from BRC_Experiment.Modularized.model import load_model, get_pronoun_token_ids
+from BRC_Experiment.Modularized.data import load_winogender_pairs, load_reassurance_pairs
+from BRC_Experiment.Modularized.model import load_model, get_pronoun_token_ids, get_choice_token_ids
 from BRC_Experiment.Modularized.plotting import plot_and_save_brc_curves
 from BRC_Experiment.Modularized.steering import build_vectors, sweep_alpha, logit_diffs, prob_diffs, compute_perplexity
 from BRC_Experiment.Modularized.utils import build_alpha_range, configure_determinism, get_device
@@ -19,13 +19,18 @@ class Experiment:
         self.device = get_device() # Get device for model
 
         self.model = load_model(self.config.model_name, self.device) # Load model
-        self.he_id, self.she_id = get_pronoun_token_ids(self.model) # Get token ids for he and she #TODO: switch to A and B pairs
+        
+        # Load dataset and get appropriate token IDs based on dataset choice
+        if self.config.dataset == "reassurance":
+            self.prompt_pairs = load_reassurance_pairs()
+            self.choice1_id, self.choice2_id = get_choice_token_ids(self.model)
+        else:  # winogender
+            self.prompt_pairs = load_winogender_pairs()
+            self.choice1_id, self.choice2_id = get_pronoun_token_ids(self.model)
 
         self.alpha_values = build_alpha_range(
             self.config.alpha_start, self.config.alpha_stop, self.config.alpha_step
         ) # Build alpha range
-
-        self.prompt_pairs = load_winogender_pairs()
 
         # Expand layer lists
         n_layers = self.model.cfg.n_layers # Get total number of layers in model
@@ -39,12 +44,12 @@ class Experiment:
     def _get_metric_function(self):
         """Return the appropriate metric function based on config."""
         if self.config.metric == "logit_diffs":
-            return lambda logits: logit_diffs(logits, self.he_id, self.she_id)
+            return lambda logits: logit_diffs(logits, self.choice1_id, self.choice2_id)
         elif self.config.metric == "prob_diffs":
-            return lambda logits: prob_diffs(logits, self.he_id, self.she_id)
+            return lambda logits: prob_diffs(logits, self.choice1_id, self.choice2_id)
         elif self.config.metric == "compute_perplexity":
-            # For perplexity, we'll compute for "he" token by default
-            return lambda logits: compute_perplexity(logits, self.he_id)
+            # For perplexity, we'll compute for first choice token by default
+            return lambda logits: compute_perplexity(logits, self.choice1_id)
         else:
             raise ValueError(f"Unknown metric: {self.config.metric}")
 
@@ -167,6 +172,8 @@ class Experiment:
                 fixed_y_limits=fixed_limits,
                 metric_name=self.config.metric,
                 use_log_scale=use_log_scale,
+                dataset_name=self.config.dataset,
+                model_name=self.config.model_name,
             )
             print("Saved:", fig_path)
     

@@ -19,6 +19,8 @@ def plot_and_save_brc_curves(
     fixed_y_limits: tuple[float, float] | None = None,
     metric_name: str = "logit_diffs",
     use_log_scale: bool = False,
+    dataset_name: str = "reassurance",
+    model_name: str = "gpt2",
 ) -> str:
     """
     Plots and saves BRC curves for bias, random, and orth vectors.
@@ -62,9 +64,9 @@ def plot_and_save_brc_curves(
     
     # Dynamic y-axis label based on metric
     if metric_name == "logit_diffs":
-        ylabel = r"$\Delta_{\mathrm{logit}} = \mathrm{logit}(He) - \mathrm{logit}(She)$"
+        ylabel = r"$\Delta_{\mathrm{logit}} = \mathrm{logit}(Choice1) - \mathrm{logit}(Choice2)$"
     elif metric_name == "prob_diffs":
-        ylabel = r"$\Delta_{\mathrm{prob}} = P(He) - P(She)$ (%)"
+        ylabel = r"$\Delta_{\mathrm{prob}} = P(Choice1) - P(Choice2)$ (%)"
     elif metric_name == "compute_perplexity":
         ylabel = r"Perplexity"
     else:
@@ -83,7 +85,7 @@ def plot_and_save_brc_curves(
     # Apply log scale first if requested
     if use_log_scale:
         # Use symlog with a reasonable threshold for prob_diffs data
-        ax.set_yscale('symlog', linthresh=1e-4)  # Linear region around zero
+        ax.set_yscale('symlog', linthresh=1e-6)  # Linear region around zero
 
     # ================ Y-AXIS LIMITS ================
     if use_log_scale:
@@ -114,8 +116,13 @@ def plot_and_save_brc_curves(
     plt.tight_layout()
 
     # ================ SAVE FIGURE ================
-    # Create directory structure: out_dir/metric_name/injL{inj_layer}/
-    out_dir_metric = os.path.join(out_dir, metric_name)
+    # Create directory structure: out_dir/dataset/model/metric_name/injL{inj_layer}/
+    # Clean model name for filesystem (remove path separators)
+    clean_model_name = model_name.replace("/", "_").replace("\\", "_")
+    
+    out_dir_dataset = os.path.join(out_dir, dataset_name)
+    out_dir_model = os.path.join(out_dir_dataset, clean_model_name)
+    out_dir_metric = os.path.join(out_dir_model, metric_name)
     out_dir_layer = os.path.join(out_dir_metric, f"injL{inj_layer}")
     os.makedirs(out_dir_layer, exist_ok=True)
     fig_path = os.path.join(out_dir_layer, f"brc_{metric_name}_injL{inj_layer}_{inject_site}_readL{read_layer}_{read_site}.png")

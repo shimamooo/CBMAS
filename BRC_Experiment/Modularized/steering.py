@@ -126,17 +126,17 @@ def sweep_alpha(
 
 
 @torch.no_grad()
-def logit_diffs(logit_list: List[torch.Tensor], he_id: int, she_id: int) -> List[float]:
-    return [float((logits[he_id] - logits[she_id]).item()) for logits in logit_list]
+def logit_diffs(logit_list: List[torch.Tensor], choice1_id: int, choice2_id: int) -> List[float]:
+    return [float((logits[choice1_id] - logits[choice2_id]).item()) for logits in logit_list]
 
 @torch.no_grad()
-def prob_diffs(logit_list: List[torch.Tensor], he_id: int, she_id: int) -> List[float]:
-    """Compute probability differences (He - She) from logits using softmax. Values are bounded between -1 and 1."""
+def prob_diffs(logit_list: List[torch.Tensor], choice1_id: int, choice2_id: int) -> List[float]:
+    """Compute probability differences (Choice1 - Choice2) from logits using softmax. Values are bounded between -1 and 1."""
     diffs = []
     for logits in logit_list:
         probs = torch.softmax(logits, dim=-1)
-        # Compute probability difference: P(He) - P(She)
-        prob_diff = float((probs[he_id] - probs[she_id]).item())
+        # Compute probability difference: P(Choice1) - P(Choice2)
+        prob_diff = float((probs[choice1_id] - probs[choice2_id]).item())
         diffs.append(prob_diff)
     return diffs
 

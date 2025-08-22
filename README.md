@@ -1,14 +1,15 @@
 # BRC Experiment (Modularized)
 
-A modular, production-style refactor of a Bias-Repelling Control (BRC) experiment built on TransformerLens and GPT-2 small. It loads Winogender prompts, constructs steering vectors, sweeps steering strengths (alpha), and plots differences for He vs She using configurable metrics (logit differences, probability differences, or perplexity).
+A modular, production-style refactor of a Bias-Repelling Control (BRC) experiment built on TransformerLens. It supports multiple datasets (Winogender for gender bias, Reassurance for supportive/unsupportive responses), constructs steering vectors, sweeps steering strengths (alpha), and plots differences using configurable metrics (logit differences, probability differences, or perplexity).
 
 ## Features
 - Clean module boundaries: config, data, model, steering, plotting, experiment, CLI
+- **Multiple datasets**: Winogender (gender bias) and Reassurance (supportive responses)
 - **Multiple metrics**: Choose between `logit_diffs`, `prob_diffs`, or `compute_perplexity`
 - Deterministic runs when possible (cuBLAS/CUDNN settings and seeds)
 - CLI to run experiments with configurable hyperparameters
 - Quick-start example in `main.py` for fast debugging
-- Saved figures per injection/read layer under `graphs/`
+- Organized output structure: `graphs/{dataset}/{model}/{metric}/...`
 
 ## Installation
 1. Python 3.10+ recommended
@@ -106,9 +107,13 @@ python -m BRC_Experiment.Modularized.cli \
   --out-dir graphs
 ```
 
+**Available Datasets:**
+- `reassurance` (default): Supportive vs unsupportive responses - Choice1 vs Choice2
+- `winogender`: Gender bias analysis - He vs She
+
 **Available Metrics:**
-- `logit_diffs` (default): Raw logit differences He - She
-- `prob_diffs`: Probability differences P(He) - P(She) (auto-scaled to % and log scale)
+- `logit_diffs` (default): Raw logit differences Choice1 - Choice2
+- `prob_diffs`: Probability differences P(Choice1) - P(Choice2) (auto-scaled to % and log scale)
 - `compute_perplexity`: Perplexity for target token
 
 **Layer Specifications:**
@@ -118,7 +123,7 @@ python -m BRC_Experiment.Modularized.cli \
 
 ## Notes
 - The dataset `oskarvanderwal/winogender` is pulled automatically via `datasets`. Internet access is required the first time.
-- Figures are saved as PNG: `graphs/{metric}/injL{inj}/brc_{metric}_injL{inj}_{inject_site}_readL{read}_{read_site}.png`.
+- Figures are saved as PNG: `graphs/{dataset}/{model}/{metric}/injL{inj}/brc_{metric}_injL{inj}_{inject_site}_readL{read}_{read_site}.png`.
 - Determinism is best-effort due to CUDA/BLAS constraints.
 
 ## Testing
