@@ -161,3 +161,4 @@ def compute_perplexity(logit_list: List[torch.Tensor], target_token_id: int) -> 
         nll = -torch.log(torch.tensor(target_prob))
         perplexity = torch.exp(nll).item()
         perplexities.append(perplexity)
+    return perplexities
