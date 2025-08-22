@@ -7,7 +7,7 @@ from BRC_Experiment.Modularized.config import ExperimentConfig
 from BRC_Experiment.Modularized.data import load_winogender_pairs
 from BRC_Experiment.Modularized.model import load_model, get_pronoun_token_ids
 from BRC_Experiment.Modularized.plotting import plot_and_save_brc_curves
-from BRC_Experiment.Modularized.steering import build_vectors, sweep_alpha, logit_diffs
+from BRC_Experiment.Modularized.steering import build_vectors, sweep_alpha, logit_diffs, prob_diffs, compute_perplexity
 from BRC_Experiment.Modularized.utils import build_alpha_range, configure_determinism, get_device
 
 
@@ -36,11 +36,29 @@ class Experiment:
             list(self.config.read_layers) if self.config.read_layers is not None else list(range(n_layers)) # If read_layers is not specified, use all layers
         )
 
+    def _get_metric_function(self):
+        """Return the appropriate metric function based on config."""
+        if self.config.metric == "logit_diffs":
+            return lambda logits: logit_diffs(logits, self.he_id, self.she_id)
+        elif self.config.metric == "prob_diffs":
+            return lambda logits: prob_diffs(logits, self.he_id, self.she_id)
+        elif self.config.metric == "compute_perplexity":
+            # For perplexity, we'll compute for "he" token by default
+            return lambda logits: compute_perplexity(logits, self.he_id)
+        else:
+            raise ValueError(f"Unknown metric: {self.config.metric}")
+
     def run_experiment(self) -> None:
         # Phase 1: accumulate all curves and compute global y-limits
         results: list[dict[str, object]] = []
         global_min: float | None = None
         global_max: float | None = None
+        
+        # Get the metric function to use
+        metric_func = self._get_metric_function()
+        
+        # Automatically enable log scale for prob_diffs since values are very small
+        use_log_scale = self.config.use_log_scale or (self.config.metric == "prob_diffs") #TODO: logic is messy, clean this up later
 
         for inj_layer in self.inject_layers:
             vectors = build_vectors(
@@ -59,6 +77,7 @@ class Experiment:
                 inject_hook = f"blocks.{inj_layer}.{self.config.inject_site}" # Get inject hook name TODO: maybe move to config and change to inject_hook_name
                 read_hook = f"blocks.{read_layer}.{self.config.read_site}" # Get read hook name TODO: maybe move to config and change to read_hook_name
 
+                #TODO: no reasone to do this thrice lol, clean this up later
                 bias_logits = sweep_alpha(
                     self.model,
                     vectors["bias"],
@@ -70,6 +89,7 @@ class Experiment:
                     read_hook,
                     self.config.prepend_bos,
                     self.device,
+                    self.config.steer_all_tokens,
                 ) # get list of logits for each alpha value for bias vector
 
                 random_logits = sweep_alpha(
@@ -83,6 +103,7 @@ class Experiment:
                     read_hook,
                     self.config.prepend_bos,
                     self.device,
+                    self.config.steer_all_tokens,
                 ) # get list of logits for each alpha value for random vector
 
                 orth_logits = sweep_alpha(
@@ -96,12 +117,13 @@ class Experiment:
                     read_hook,
                     self.config.prepend_bos,
                     self.device,
+                    self.config.steer_all_tokens,
                 ) # get list of logits for each alpha value for orth vector
 
-                #TODO: dedicate code to calculate different metrics for each vector
-                bias_diffs = logit_diffs(bias_logits, self.he_id, self.she_id)
-                random_diffs = logit_diffs(random_logits, self.he_id, self.she_id)
-                orth_diffs = logit_diffs(orth_logits, self.he_id, self.she_id)
+                # Calculate differences using selected metric
+                bias_diffs = metric_func(bias_logits)
+                random_diffs = metric_func(random_logits)
+                orth_diffs = metric_func(orth_logits)
 
                 # Update global min/max
                 for v in (*bias_diffs, *random_diffs, *orth_diffs):
@@ -143,6 +165,8 @@ class Experiment:
                 self.config.prefix,
                 self.config.out_dir,
                 fixed_y_limits=fixed_limits,
+                metric_name=self.config.metric,
+                use_log_scale=use_log_scale,
             )
             print("Saved:", fig_path)
     

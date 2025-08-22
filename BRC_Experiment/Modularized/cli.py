@@ -24,6 +24,13 @@ def build_parser() -> argparse.ArgumentParser:
 
     p.add_argument("--seed", type=int, default=42)
     p.add_argument("--out-dir", type=str, default="graphs")
+    p.add_argument("--metric", type=str, default="logit_diffs", 
+                   choices=["logit_diffs", "prob_diffs", "compute_perplexity"],
+                   help="Metric to compute: logit_diffs (raw logit differences), prob_diffs (probability differences), or compute_perplexity (perplexity)")
+    p.add_argument("--steer-last-token-only", action="store_true", 
+                   help="Steer only the last token position instead of all tokens (default: steer all tokens)")
+    p.add_argument("--use-log-scale", action="store_true", 
+                   help="Force log scale for plotting (automatically enabled for prob_diffs metric)")
     return p
 
 
@@ -57,6 +64,9 @@ def main(argv: Optional[list[str]] = None) -> None:
         read_layers=_parse_layer_spec(args.read_layers),
         seed=args.seed,
         out_dir=args.out_dir,
+        metric=args.metric,
+        steer_all_tokens=not args.steer_last_token_only,
+        use_log_scale=args.use_log_scale,
     )
     # Import heavy modules only when actually executing, not on --help
     from BRC_Experiment.Modularized.experiment import Experiment

@@ -21,5 +21,14 @@ class ExperimentConfig:
 
     seed: int = 42
     out_dir: str = "graphs"
+    
+    # Metric to use for calculating differences: logit_diffs, prob_diffs, or compute_perplexity
+    metric: str = "logit_diffs"
+    
+    # Whether to steer all token positions or just the last token
+    steer_all_tokens: bool = True
+    
+    # Whether to use log scale for plotting (useful for very small values)
+    use_log_scale: bool = False
 
 

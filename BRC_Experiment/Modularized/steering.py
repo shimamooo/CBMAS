@@ -5,7 +5,7 @@ try:  # Optional import for typing only; tests use fakes
     from transformer_lens import HookedTransformer  # type: ignore
 except Exception:  # pragma: no cover
     HookedTransformer = object  # type: ignore
-
+#TODOL passing in the same parameters to different functions, probably first consolidate with passing experiment config object and make that more robust
 
 @torch.no_grad()
 def residual_at_last_token(model: HookedTransformer, prompt: str, layer: int, site: str, prepend_bos: bool, device: torch.device) -> torch.Tensor:
@@ -57,6 +57,7 @@ def get_steered_logits(
     read_layer: int,
     prepend_bos: bool,
     device: torch.device,
+    steer_all_tokens: bool = True,
 ) -> torch.Tensor:
     tokens = model.to_tokens(prompt, prepend_bos=prepend_bos).to(device)
     last_idx = tokens.shape[1] - 1
@@ -64,7 +65,12 @@ def get_steered_logits(
 
     def do_steer(act: torch.Tensor, hook) -> torch.Tensor:  # type: ignore[no-redef]
         vec = steer_vec.to(act.device)
-        act[:, last_idx, :] = act[:, last_idx, :] + (alpha * vec)
+        if steer_all_tokens:
+            # Steer all token positions
+            act[:, :, :] = act[:, :, :] + (alpha * vec)
+        else:
+            # Steer only the last token position (original behavior)
+            act[:, last_idx, :] = act[:, last_idx, :] + (alpha * vec)
         return act
 
     def do_read(act: torch.Tensor, hook) -> torch.Tensor:  # type: ignore[no-redef]
@@ -95,6 +101,7 @@ def sweep_alpha(
     read_hook_name: str,
     prepend_bos: bool,
     device: torch.device,
+    steer_all_tokens: bool = True,
 ) -> List[torch.Tensor]:
     """
     Returns: A list of logits for each alpha value.
@@ -112,6 +119,7 @@ def sweep_alpha(
             read_layer,
             prepend_bos,
             device,
+            steer_all_tokens,
         )
         logits_list.append(logits)
     return logits_list
