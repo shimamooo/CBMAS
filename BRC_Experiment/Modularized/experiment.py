@@ -62,10 +62,22 @@ class Experiment:
         # Get the metric function to use
         metric_func = self._get_metric_function()
         
+        print(f"=== DEBUG INFO ===")
+        print(f"Dataset: {self.config.dataset}")
+        print(f"Metric: {self.config.metric}")
+        print(f"Choice1 ID: {self.choice1_id}")
+        print(f"Choice2 ID: {self.choice2_id}")
+        print(f"Prompt pairs length: {len(self.prompt_pairs)}")
+        print(f"Alpha values: {self.alpha_values}")
+        print(f"Inject layers: {self.inject_layers}")
+        print(f"Read layers: {self.read_layers}")
+        print(f"==================")
+        
         # Automatically enable log scale for prob_diffs since values are very small
         use_log_scale = self.config.use_log_scale or (self.config.metric == "prob_diffs") #TODO: logic is messy, clean this up later
 
         for inj_layer in self.inject_layers:
+            print(f"\n--- Processing injection layer {inj_layer} ---")
             vectors = build_vectors(
                 self.model,
                 inj_layer,
@@ -79,6 +91,7 @@ class Experiment:
                 if read_layer <= inj_layer:
                     continue # Skip if read_layer is less than or equal to inject_layer (impossible combo)
 
+                print(f"  Processing read layer {read_layer}...")
                 inject_hook = f"blocks.{inj_layer}.{self.config.inject_site}" # Get inject hook name TODO: maybe move to config and change to inject_hook_name
                 read_hook = f"blocks.{read_layer}.{self.config.read_site}" # Get read hook name TODO: maybe move to config and change to read_hook_name
 
@@ -125,10 +138,20 @@ class Experiment:
                     self.config.steer_all_tokens,
                 ) # get list of logits for each alpha value for orth vector
 
+                # Debug prints for logits
+                print(f"    Bias logits length: {len(bias_logits) if bias_logits else 'None'}")
+                print(f"    Random logits length: {len(random_logits) if random_logits else 'None'}")
+                print(f"    Orth logits length: {len(orth_logits) if orth_logits else 'None'}")
+
                 # Calculate differences using selected metric
                 bias_diffs = metric_func(bias_logits)
                 random_diffs = metric_func(random_logits)
                 orth_diffs = metric_func(orth_logits)
+
+                # Debug prints for metric results
+                print(f"    Bias diffs: {bias_diffs}")
+                print(f"    Random diffs: {random_diffs}")
+                print(f"    Orth diffs: {orth_diffs}")
 
                 # Update global min/max
                 for v in (*bias_diffs, *random_diffs, *orth_diffs):
