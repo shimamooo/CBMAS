@@ -80,9 +80,29 @@ def plot_and_save_brc_curves(
         weight="bold",
     )
     
-    # Apply log scale if requested
+    # Apply log scale first if requested
     if use_log_scale:
-        ax.set_yscale('symlog', linthresh=1e-6)  # Use symlog to handle values near zero
+        # Use symlog with a reasonable threshold for prob_diffs data
+        ax.set_yscale('symlog', linthresh=1e-4)  # Linear region around zero
+
+    # ================ Y-AXIS LIMITS ================
+    if use_log_scale:
+        # For log scale, let matplotlib auto-scale for better visualization of orders of magnitude
+        pass  # Don't set manual limits with log scale
+    else:
+        # Normal scale: use fixed limits if provided, otherwise auto-calculate
+        if fixed_y_limits is not None:
+            ax.set_ylim(fixed_y_limits[0], fixed_y_limits[1])
+        else:
+            yvals = series["bias"] + series["random"] + series["orth"]
+            if yvals:
+                ymin, ymax = min(yvals), max(yvals)
+                if ymax == ymin:
+                    pad = 0.1 if ymax == 0 else abs(ymax) * 0.1
+                    ax.set_ylim(ymin - pad, ymax + pad)
+                else:
+                    yr = ymax - ymin
+                    ax.set_ylim(ymin - 0.1 * yr, ymax + 0.1 * yr)
     
     ax.legend(frameon=True, fontsize=11)
     ax.tick_params(axis="both", which="major", labelsize=12)
@@ -90,20 +110,6 @@ def plot_and_save_brc_curves(
     # ================ ANNOTATIONS ================
     note = f"BOS={prepend_bos}, prefix='{prefix}'"
     ax.text(0.01, -0.14, note, transform=ax.transAxes, fontsize=10, color="gray")
-
-    # ================ Y-AXIS LIMITS ================
-    if fixed_y_limits is not None:
-        ax.set_ylim(fixed_y_limits[0], fixed_y_limits[1])
-    else:
-        yvals = series["bias"] + series["random"] + series["orth"]
-        if yvals:
-            ymin, ymax = min(yvals), max(yvals)
-            if ymax == ymin:
-                pad = 0.1 if ymax == 0 else abs(ymax) * 0.1
-                ax.set_ylim(ymin - pad, ymax + pad)
-            else:
-                yr = ymax - ymin
-                ax.set_ylim(ymin - 0.1 * yr, ymax + 0.1 * yr)
 
     plt.tight_layout()
 
