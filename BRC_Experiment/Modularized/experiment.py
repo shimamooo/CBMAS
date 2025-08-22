@@ -197,6 +197,7 @@ class Experiment:
                 use_log_scale=use_log_scale,
                 dataset_name=self.config.dataset,
                 model_name=self.config.model_name,
+                log_scale_both=self.config.log_scale_both,  # Add this parameter
             )
             print("Saved:", fig_path)
     

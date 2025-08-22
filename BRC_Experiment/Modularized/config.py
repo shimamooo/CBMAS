@@ -31,6 +31,9 @@ class ExperimentConfig:
     # Whether to use log scale for plotting (useful for very small values)
     use_log_scale: bool = False
     
+    # Whether to use log scale on both axes (useful for exponential growth)
+    log_scale_both: bool = False
+    
     # Dataset to use: "winogender" or "reassurance"
     dataset: str = "reassurance"
 
