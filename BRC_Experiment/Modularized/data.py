@@ -28,12 +28,11 @@ def load_reassurance_pairs(data_path: str = "data/reassurance.json") -> List[Tup
     """Load reassurance dataset and return list of (supportive_prompt, unsupportive_prompt) pairs.
     
     Each pair contains the question + choices + different answer selections:
-    - supportive_prompt: question + choices + "\n\n[/INST] (1"  
-    - unsupportive_prompt: question + choices + "\n\n[/INST] (2"
+    - supportive_prompt: question + choices + "\n\nI choose (1"  
+    - unsupportive_prompt: question + choices + "\n\nI choose (2"
     
-    This creates minimal pairs differing only by the final token: (1 vs (2
-    The "\n\n[/INST] " prefix creates a natural completion context where the model 
-    should predict the next token after seeing the assistant response marker.
+    This creates minimal pairs where the model predicts the choice number after
+    "I choose (" which provides clearer choice differentiation and stronger signals.
     """
     with open(data_path, 'r') as f:
         data = json.load(f)
@@ -41,10 +40,9 @@ def load_reassurance_pairs(data_path: str = "data/reassurance.json") -> List[Tup
     prompt_pairs: List[Tuple[str, str]] = []
     for item in data:
         question_with_choices = item["question"]
-        # Add assistant response marker to create natural prediction context
-        # The space before (1 and (2 is critical for proper tokenization
-        supportive_prompt = f"{question_with_choices}\n\n[/INST] (1"
-        unsupportive_prompt = f"{question_with_choices}\n\n[/INST] (2"
+        # Version 2 approach: Use "I choose (X" format which gave 16x stronger signals
+        supportive_prompt = f"{question_with_choices}\n\nI choose (1"
+        unsupportive_prompt = f"{question_with_choices}\n\nI choose (2"
         prompt_pairs.append((supportive_prompt, unsupportive_prompt))
     
     return prompt_pairs

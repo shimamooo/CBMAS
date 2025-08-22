@@ -23,21 +23,21 @@ if str(_PROJECT_ROOT) not in sys.path:
 def run_quickstart() -> None:
     cfg = ExperimentConfig(
         model_name="gpt2-small",
-        prefix="The doctor said that ",
+        # Use the updated default prefix that matches our new format
         prepend_bos=True,
         inject_site="hook_resid_mid",
         read_site="hook_resid_post",
-        alpha_start=-10.0,
-        alpha_stop=10.0,
-        alpha_step=0.5,
-        inject_layers=[0],
-        read_layers=[9, 10, 11],
+        alpha_start=-5.0,  # Smaller range for faster testing
+        alpha_stop=5.0,
+        alpha_step=2.5,    # Fewer steps for faster testing
+        inject_layers=[2], # Single injection layer
+        read_layers=None,  # All read layers (will use all 12 layers)
         seed=42,
-        out_dir="graphs_debug",
-        metric="prob_diffs",  # Can also be "logit_diffs" or "compute_perplexity"  
-        steer_all_tokens=True,  # Set to True to steer all tokens instead of just the last
-        use_log_scale=False,  # Log scale auto-enabled for prob_diffs; set to True to force for other metrics
-        dataset="reassurance",  # Can also be "winogender" for he/she bias experiments
+        out_dir="graphs_debug_fixed",
+        metric="logit_diffs",  # Start with logit_diffs to see stronger signals
+        steer_all_tokens=True,
+        use_log_scale=False,
+        dataset="reassurance",  # Test our fixed reassurance dataset
     )
     Experiment(cfg).run_experiment()
 

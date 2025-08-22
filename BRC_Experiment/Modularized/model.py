@@ -25,9 +25,9 @@ def get_pronoun_token_ids(model) -> Tuple[int, int]:
 
 
 def get_choice_token_ids(model) -> Tuple[int, int]:
-    """Return token ids for " (1" and " (2" tokens (with leading space) used in reassurance dataset."""
-    choice1_id = int(model.to_tokens(" (1", prepend_bos=False)[0, 0])
-    choice2_id = int(model.to_tokens(" (2", prepend_bos=False)[0, 0])
+    """Return token ids for '1' and '2' tokens (simple numbers) used in reassurance dataset."""
+    choice1_id = int(model.to_tokens("1", prepend_bos=False)[0, 0])
+    choice2_id = int(model.to_tokens("2", prepend_bos=False)[0, 0])
     return choice1_id, choice2_id
 
 
