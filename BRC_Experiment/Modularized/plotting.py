@@ -21,6 +21,7 @@ def plot_and_save_brc_curves(
     use_log_scale: bool = False,
     dataset_name: str = "reassurance",
     model_name: str = "gpt2",
+    log_scale_both: bool = False,  # Add parameter for log scale on both axes
 ) -> str:
     """
     Plots and saves BRC curves for bias, random, and orth vectors.
@@ -75,21 +76,31 @@ def plot_and_save_brc_curves(
     ax.set_ylabel(ylabel, fontsize=14)
     
     # Add log scale suffix to title if enabled
-    title_suffix = " (log scale)" if use_log_scale else ""
+    title_suffix = " (log scale)" if use_log_scale or log_scale_both else ""
     ax.set_title(
         f"BRC ({metric_name}){title_suffix} | inject: L{inj_layer}:{inject_site} → read: L{read_layer}:{read_site}",
         fontsize=15,
         weight="bold",
     )
     
-    # Apply log scale first if requested
-    if use_log_scale:
-        # Use symlog with a reasonable threshold for prob_diffs data
+    # Apply log scale based on parameters
+    if log_scale_both:
+        # Log scale on both axes - use symlog for x-axis to handle negative values
+        ax.set_xscale('symlog', linthresh=1.0)  # Linear region around zero for x-axis
+        ax.set_yscale('log')  # Log scale for y-axis
+        # Add grid for log scale
+        ax.grid(True, which="both", ls="-", alpha=0.2)
+        ax.grid(True, which="minor", ls=":", alpha=0.2)
+    elif use_log_scale:
+        # Only y-axis log scale (existing behavior)
         ax.set_yscale('symlog', linthresh=1e-6)  # Linear region around zero
 
     # ================ Y-AXIS LIMITS ================
-    if use_log_scale:
-        # For log scale, let matplotlib auto-scale for better visualization of orders of magnitude
+    if log_scale_both:
+        # For log scale on both axes, let matplotlib auto-scale
+        pass
+    elif use_log_scale:
+        # For y-axis log scale only, let matplotlib auto-scale for better visualization of orders of magnitude
         pass  # Don't set manual limits with log scale
     else:
         # Normal scale: use fixed limits if provided, otherwise auto-calculate
