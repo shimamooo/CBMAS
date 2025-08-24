@@ -17,7 +17,6 @@ class Experiment:
 
         configure_determinism(self.config.seed) # Set seed for reproducibility
         self.device = get_device() # Get device for model
-
         self.model = load_model(self.config.model_name, self.device) # Load model
         
         # Load dataset and get appropriate token IDs based on dataset choice
@@ -28,9 +27,10 @@ class Experiment:
             self.prompt_pairs = load_winogender_pairs()
             self.choice1_id, self.choice2_id = get_pronoun_token_ids(self.model)
 
+        # Build alpha range
         self.alpha_values = build_alpha_range(
             self.config.alpha_start, self.config.alpha_stop, self.config.alpha_step
-        ) # Build alpha range
+        ) 
 
         # Expand layer lists
         n_layers = self.model.cfg.n_layers # Get total number of layers in model
@@ -54,12 +54,11 @@ class Experiment:
             raise ValueError(f"Unknown metric: {self.config.metric}")
 
     def run_experiment(self) -> None:
-        # Phase 1: accumulate all curves and compute global y-limits
-        results: list[dict[str, object]] = []
-        global_min: float | None = None
-        global_max: float | None = None
-        
-        # Get the metric function to use
+        # ====== PHASE 1: Accumulate all curves and compute global y-limits ======
+        results: list[dict[str, object]] = [] # List of results for each injection layer and read layer
+        global_min: float 
+        global_max: float 
+    
         metric_func = self._get_metric_function()
         
         print(f"=== DEBUG INFO ===")
@@ -72,9 +71,7 @@ class Experiment:
         print(f"Inject layers: {self.inject_layers}")
         print(f"Read layers: {self.read_layers}")
         print(f"==================")
-        
-        # Automatically enable log scale for prob_diffs since values are very small
-        use_log_scale = self.config.use_log_scale or (self.config.metric == "prob_diffs") #TODO: logic is messy, clean this up later
+
 
         for inj_layer in self.inject_layers:
             print(f"\n--- Processing injection layer {inj_layer} ---")
@@ -95,48 +92,31 @@ class Experiment:
                 inject_hook = f"blocks.{inj_layer}.{self.config.inject_site}" # Get inject hook name TODO: maybe move to config and change to inject_hook_name
                 read_hook = f"blocks.{read_layer}.{self.config.read_site}" # Get read hook name TODO: maybe move to config and change to read_hook_name
 
-                #TODO: no reasone to do this thrice lol, clean this up later
-                bias_logits = sweep_alpha(
-                    self.model,
-                    vectors["bias"],
-                    self.alpha_values,
-                    self.config.prefix,
-                    inj_layer,
-                    read_layer,
-                    inject_hook,
-                    read_hook,
-                    self.config.prepend_bos,
-                    self.device,
-                    self.config.steer_all_tokens,
-                ) # get list of logits for each alpha value for bias vector
-
-                random_logits = sweep_alpha(
-                    self.model,
-                    vectors["random"],
-                    self.alpha_values,
-                    self.config.prefix,
-                    inj_layer,
-                    read_layer,
-                    inject_hook,
-                    read_hook,
-                    self.config.prepend_bos,
-                    self.device,
-                    self.config.steer_all_tokens,
-                ) # get list of logits for each alpha value for random vector
-
-                orth_logits = sweep_alpha(
-                    self.model,
-                    vectors["orth"],
-                    self.alpha_values,
-                    self.config.prefix,
-                    inj_layer,
-                    read_layer,
-                    inject_hook,
-                    read_hook,
-                    self.config.prepend_bos,
-                    self.device,
-                    self.config.steer_all_tokens,
-                ) # get list of logits for each alpha value for orth vector
+                # Factor out common parameters to avoid duplication
+                common_args = {
+                    'model': self.model,
+                    'alpha_values': self.alpha_values,
+                    'prompt': self.config.prefix,
+                    'inj_layer': inj_layer,
+                    'read_layer': read_layer,
+                    'inject_hook_name': inject_hook,
+                    'read_hook_name': read_hook,
+                    'prepend_bos': self.config.prepend_bos,
+                    'device': self.device,
+                    'steer_all_tokens': self.config.steer_all_tokens,
+                }
+                
+                # Get logits for all vector types
+                logits_by_type = {}
+                for vector_name in ["bias", "random", "orth"]:
+                    logits_by_type[vector_name] = sweep_alpha(
+                        vectors[vector_name],
+                        **common_args
+                    )
+                
+                bias_logits = logits_by_type["bias"]
+                random_logits = logits_by_type["random"]
+                orth_logits = logits_by_type["orth"]
 
                 # Debug prints for logits
                 print(f"    Bias logits length: {len(bias_logits) if bias_logits else 'None'}")
@@ -168,9 +148,7 @@ class Experiment:
                     }
                 )
 
-        # Determine fixed y-limits with a small pad
-        if global_min is None or global_max is None:
-            return  # nothing to plot
+        # ====== PHASE 2: Plot with fixed y-limits for consistency across figures ======
         if global_max == global_min:
             pad = 0.1 if global_max == 0 else abs(global_max) * 0.1
             fixed_limits = (global_min - pad, global_max + pad)
@@ -178,7 +156,6 @@ class Experiment:
             yr = global_max - global_min
             fixed_limits = (global_min - 0.1 * yr, global_max + 0.1 * yr)
 
-        # Phase 2: plot with fixed y-limits for consistency across figures
         for item in results:
             fig_path = plot_and_save_brc_curves(
                 item["bias"],  # type: ignore[arg-type]
@@ -189,15 +166,13 @@ class Experiment:
                 item["read"],  # type: ignore[arg-type]
                 self.config.inject_site,
                 self.config.read_site,
-                self.config.prepend_bos,
-                self.config.prefix,
                 self.config.out_dir,
                 fixed_y_limits=fixed_limits,
                 metric_name=self.config.metric,
-                use_log_scale=use_log_scale,
+                use_log_scale=self.config.use_log_scale,
                 dataset_name=self.config.dataset,
                 model_name=self.config.model_name,
-                log_scale_both=self.config.log_scale_both,  # Add this parameter
+                log_scale_both=self.config.log_scale_both,
             )
             print("Saved:", fig_path)
     

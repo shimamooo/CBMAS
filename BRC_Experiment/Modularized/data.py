@@ -40,7 +40,6 @@ def load_reassurance_pairs(data_path: str = "data/reassurance.json") -> List[Tup
     prompt_pairs: List[Tuple[str, str]] = []
     for item in data:
         question_with_choices = item["question"]
-        # Version 2 approach: Use "I choose (X" format which gave 16x stronger signals
         supportive_prompt = f"{question_with_choices}\n\nI choose (1"
         unsupportive_prompt = f"{question_with_choices}\n\nI choose (2"
         prompt_pairs.append((supportive_prompt, unsupportive_prompt))

@@ -13,10 +13,8 @@ def plot_and_save_brc_curves(
     read_layer: int,
     inject_site: str,
     read_site: str,
-    prepend_bos: bool,
-    prefix: str,
     out_dir: str,
-    fixed_y_limits: tuple[float, float] | None = None,
+    fixed_y_limits: tuple[float, float],
     metric_name: str = "logit_diffs",
     use_log_scale: bool = False,
     dataset_name: str = "reassurance",
@@ -44,12 +42,15 @@ def plot_and_save_brc_curves(
             "random": [x * 100 for x in random_diffs],
             "orth": [x * 100 for x in orth_diffs],
         }
+        # Scale y-limits to match the percentage conversion
+        scaled_y_limits = (fixed_y_limits[0] * 100, fixed_y_limits[1] * 100)
     else:
         series = {
             "bias": list(bias_diffs),
             "random": list(random_diffs),
             "orth": list(orth_diffs),
         }
+        scaled_y_limits = fixed_y_limits
 
     alpha_list = list(alpha_values)
 
@@ -76,53 +77,47 @@ def plot_and_save_brc_curves(
     ax.set_ylabel(ylabel, fontsize=14)
     
     # Add log scale suffix to title if enabled
-    title_suffix = " (log scale)" if use_log_scale or log_scale_both else ""
+    if log_scale_both:
+        title_suffix = " (log scale both axes)"
+    elif use_log_scale:
+        title_suffix = " (log scale)"
+    else:
+        title_suffix = ""
     ax.set_title(
         f"BRC ({metric_name}){title_suffix} | inject: L{inj_layer}:{inject_site} → read: L{read_layer}:{read_site}",
         fontsize=15,
         weight="bold",
     )
     
+    # Determine log scale behavior
+    # Default to True for prob_diffs (values are very small), False for others
+    default_log_scale = metric_name == "prob_diffs"
+    effective_log_scale = use_log_scale if use_log_scale is not None else default_log_scale
+    
     # Apply log scale based on parameters
+    # Choose appropriate linthresh based on metric and scaling
+    if metric_name == "prob_diffs":
+        # For percentage-scaled probability differences
+        y_linthresh = 1e-2  # 0.01% is a reasonable linear threshold
+    else:
+        # For logit differences and other metrics
+        y_linthresh = 1e-6
+    
     if log_scale_both:
-        # Log scale on both axes - use symlog for x-axis to handle negative values
+        # Log scale on both axes - use symlog for both to handle negative values
         ax.set_xscale('symlog', linthresh=1.0)  # Linear region around zero for x-axis
-        ax.set_yscale('log')  # Log scale for y-axis
+        ax.set_yscale('symlog', linthresh=y_linthresh)  # Use appropriate threshold for y-axis
         # Add grid for log scale
         ax.grid(True, which="both", ls="-", alpha=0.2)
         ax.grid(True, which="minor", ls=":", alpha=0.2)
-    elif use_log_scale:
-        # Only y-axis log scale (existing behavior)
-        ax.set_yscale('symlog', linthresh=1e-6)  # Linear region around zero
+    elif effective_log_scale:
+        # Only y-axis log scale
+        ax.set_yscale('symlog', linthresh=y_linthresh)
 
     # ================ Y-AXIS LIMITS ================
-    if log_scale_both:
-        # For log scale on both axes, let matplotlib auto-scale
-        pass
-    elif use_log_scale:
-        # For y-axis log scale only, let matplotlib auto-scale for better visualization of orders of magnitude
-        pass  # Don't set manual limits with log scale
-    else:
-        # Normal scale: use fixed limits if provided, otherwise auto-calculate
-        if fixed_y_limits is not None:
-            ax.set_ylim(fixed_y_limits[0], fixed_y_limits[1])
-        else:
-            yvals = series["bias"] + series["random"] + series["orth"]
-            if yvals:
-                ymin, ymax = min(yvals), max(yvals)
-                if ymax == ymin:
-                    pad = 0.1 if ymax == 0 else abs(ymax) * 0.1
-                    ax.set_ylim(ymin - pad, ymax + pad)
-                else:
-                    yr = ymax - ymin
-                    ax.set_ylim(ymin - 0.1 * yr, ymax + 0.1 * yr)
-    
+    ax.set_ylim(scaled_y_limits[0], scaled_y_limits[1])
     ax.legend(frameon=True, fontsize=11)
     ax.tick_params(axis="both", which="major", labelsize=12)
-
-    # ================ ANNOTATIONS ================
-    note = f"BOS={prepend_bos}, prefix='{prefix}'"
-    ax.text(0.01, -0.14, note, transform=ax.transAxes, fontsize=10, color="gray")
 
     plt.tight_layout()
 
