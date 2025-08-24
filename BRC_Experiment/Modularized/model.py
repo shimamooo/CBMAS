@@ -1,19 +1,10 @@
-from typing import Tuple, TYPE_CHECKING
-
+from typing import Tuple
 import torch
-
-try:  # Optional at import time; tests may patch this symbol
-    from transformer_lens import HookedTransformer  # type: ignore
-except Exception:  # pragma: no cover - fallback for environments without transformer_lens
-    HookedTransformer = None  # type: ignore
+from transformer_lens import HookedTransformer
 
 
-def load_model(model_name: str, device: torch.device):
-    global HookedTransformer  # use patched symbol in tests if provided
-    if HookedTransformer is None:  # lazy import if not available yet
-        from transformer_lens import HookedTransformer as _HT  # type: ignore
-        HookedTransformer = _HT  # type: ignore
-    model = HookedTransformer.from_pretrained(model_name).to(device).eval()  # type: ignore[attr-defined]
+def load_model(model_name: str, device: torch.device) -> HookedTransformer:
+    model = HookedTransformer.from_pretrained(model_name).to(device).eval()
     return model
 
 

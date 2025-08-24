@@ -33,6 +33,11 @@ def build_alpha_range(alpha_start: float, alpha_stop: float, alpha_step: float) 
     return np.array(np.arange(alpha_start, alpha_stop, alpha_step), dtype=float)
 
 
+def unit_vector(x: torch.Tensor) -> torch.Tensor:
+    """Normalize a tensor to unit length with numerical stability."""
+    return x / (x.norm() + 1e-8)
+
+
 def parse_layer_spec(spec: str | None) -> list[int] | None:
     """Parse a layer spec string into a list of ints.
 

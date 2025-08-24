@@ -7,7 +7,9 @@ from BRC_Experiment.Modularized.config import ExperimentConfig
 from BRC_Experiment.Modularized.data import load_winogender_pairs, load_reassurance_pairs
 from BRC_Experiment.Modularized.model import load_model, get_pronoun_token_ids, get_choice_token_ids
 from BRC_Experiment.Modularized.plotting import plot_and_save_brc_curves
-from BRC_Experiment.Modularized.steering import build_vectors, sweep_alpha, logit_diffs, prob_diffs, compute_perplexity
+from BRC_Experiment.Modularized.vectors import build_vectors
+from BRC_Experiment.Modularized.steering import sweep_alpha
+from BRC_Experiment.Modularized.metrics import logit_diffs, prob_diffs, compute_perplexity
 from BRC_Experiment.Modularized.utils import build_alpha_range, configure_determinism, get_device
 
 
