@@ -38,6 +38,11 @@ def unit_vector(x: torch.Tensor) -> torch.Tensor:
     return x / (x.norm() + 1e-8)
 
 
+def build_hook_name(layer: int, site: str) -> str:
+    """Build a transformer_lens hook name for a specific layer and site."""
+    return f"blocks.{layer}.{site}"
+
+
 def parse_layer_spec(spec: str | None) -> list[int] | None:
     """Parse a layer spec string into a list of ints.
 

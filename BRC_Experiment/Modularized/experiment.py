@@ -1,8 +1,4 @@
 from __future__ import annotations
-
-from typing import Iterable, List, Sequence
-import torch
-
 from BRC_Experiment.Modularized.config import ExperimentConfig
 from BRC_Experiment.Modularized.data import load_winogender_pairs, load_reassurance_pairs
 from BRC_Experiment.Modularized.model import load_model, get_pronoun_token_ids, get_choice_token_ids
@@ -10,7 +6,7 @@ from BRC_Experiment.Modularized.plotting import plot_and_save_brc_curves
 from BRC_Experiment.Modularized.vectors import build_vectors
 from BRC_Experiment.Modularized.steering import sweep_alpha
 from BRC_Experiment.Modularized.metrics import logit_diffs, prob_diffs, compute_perplexity
-from BRC_Experiment.Modularized.utils import build_alpha_range, configure_determinism, get_device
+from BRC_Experiment.Modularized.utils import build_alpha_range, configure_determinism, get_device, build_hook_name
 
 
 class Experiment:
@@ -88,14 +84,14 @@ class Experiment:
 
             for read_layer in self.read_layers:
                 if read_layer <= inj_layer:
-                    continue # Skip if read_layer is less than or equal to inject_layer (impossible combo)
+                    continue # Skip if read_layer is less than or equal to inject_layer 
 
                 print(f"  Processing read layer {read_layer}...")
-                inject_hook = f"blocks.{inj_layer}.{self.config.inject_site}" # Get inject hook name TODO: maybe move to config and change to inject_hook_name
-                read_hook = f"blocks.{read_layer}.{self.config.read_site}" # Get read hook name TODO: maybe move to config and change to read_hook_name
+                inject_hook = build_hook_name(inj_layer, self.config.inject_site)
+                read_hook = build_hook_name(read_layer, self.config.read_site)
 
-                # Factor out common parameters to avoid duplication
-                common_args = {
+                # Get steered logits for all vector types using sweep_alpha
+                sweep_args = {
                     'model': self.model,
                     'alpha_values': self.alpha_values,
                     'prompt': self.config.prefix,
@@ -108,17 +104,16 @@ class Experiment:
                     'steer_all_tokens': self.config.steer_all_tokens,
                 }
                 
-                # Get logits for all vector types
-                logits_by_type = {}
+                logits_by_vec = {}
                 for vector_name in ["bias", "random", "orth"]:
-                    logits_by_type[vector_name] = sweep_alpha(
+                    logits_by_vec[vector_name] = sweep_alpha(
                         vectors[vector_name],
-                        **common_args
+                        **sweep_args
                     )
                 
-                bias_logits = logits_by_type["bias"]
-                random_logits = logits_by_type["random"]
-                orth_logits = logits_by_type["orth"]
+                bias_logits = logits_by_vec["bias"]
+                random_logits = logits_by_vec["random"]
+                orth_logits = logits_by_vec["orth"]
 
                 # Debug prints for logits
                 print(f"    Bias logits length: {len(bias_logits) if bias_logits else 'None'}")
