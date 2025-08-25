@@ -36,5 +36,8 @@ class ExperimentConfig:
     
     # Dataset to use: "winogender" or "reassurance"
     dataset: str = "reassurance"
+    
+    # Whether to show progress bars during execution
+    show_progress: bool = True
 
 

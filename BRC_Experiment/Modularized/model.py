@@ -1,11 +1,24 @@
-from typing import Tuple
+from typing import Tuple, Optional
 import torch
 from transformer_lens import HookedTransformer
 
 
-def load_model(model_name: str, device: torch.device) -> HookedTransformer:
-    model = HookedTransformer.from_pretrained(model_name).to(device).eval()
-    return model
+def load_model(model_name: str, device: torch.device, progress_tracker=None) -> HookedTransformer:
+    """Load a model with optional progress tracking."""
+    if progress_tracker is not None:
+        with progress_tracker.track_model_loading(model_name) as progress:
+            progress.update(20, "Downloading model")
+            model = HookedTransformer.from_pretrained(model_name)
+            progress.update(30, "Moving to device")
+            model = model.to(device)
+            progress.update(20, "Setting eval mode")
+            model = model.eval()
+            progress.update(30, "Ready")
+            return model
+    else:
+        # Original simple loading without progress
+        model = HookedTransformer.from_pretrained(model_name).to(device).eval()
+        return model
 
 
 def get_pronoun_token_ids(model) -> Tuple[int, int]:

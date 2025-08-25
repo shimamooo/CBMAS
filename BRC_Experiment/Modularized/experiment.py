@@ -7,15 +7,22 @@ from BRC_Experiment.Modularized.vectors import build_vectors
 from BRC_Experiment.Modularized.steering import sweep_alpha
 from BRC_Experiment.Modularized.metrics import logit_diffs, prob_diffs, compute_perplexity
 from BRC_Experiment.Modularized.utils import build_alpha_range, configure_determinism, get_device, build_hook_name
+from BRC_Experiment.Modularized.observability import create_progress_tracker
 
 
 class Experiment:
     def __init__(self, config: ExperimentConfig) -> None:
+        print("init config")
         self.config = config 
-
+        print("init progress tracker")
+        self.progress_tracker = create_progress_tracker(enabled=self.config.show_progress)
+        print("determinism set")
         configure_determinism(self.config.seed) # Set seed for reproducibility
+        print("get device")
         self.device = get_device() # Get device for model
-        self.model = load_model(self.config.model_name, self.device) # Load model
+        print("load model")
+        self.model = load_model(self.config.model_name, self.device, self.progress_tracker) # Load model with progress tracking
+        print("load dataset")
         
         # Load dataset and get appropriate token IDs based on dataset choice
         if self.config.dataset == "reassurance":
@@ -54,8 +61,8 @@ class Experiment:
     def run_experiment(self) -> None:
         # ====== PHASE 1: Accumulate all curves and compute global y-limits ======
         results: list[dict[str, object]] = [] # List of results for each injection layer and read layer
-        global_min: float 
-        global_max: float 
+        global_min: float | None = None
+        global_max: float | None = None 
     
         metric_func = self._get_metric_function()
         
@@ -71,7 +78,7 @@ class Experiment:
         print(f"==================")
 
 
-        for inj_layer in self.inject_layers:
+        for inj_layer in self.progress_tracker.track_injection_layers(self.inject_layers):
             print(f"\n--- Processing injection layer {inj_layer} ---")
             vectors = build_vectors(
                 self.model,
@@ -82,33 +89,29 @@ class Experiment:
                 inject_site=self.config.inject_site,
             ) # Build vectors for each inject_layer
 
-            for read_layer in self.read_layers:
-                if read_layer <= inj_layer:
-                    continue # Skip if read_layer is less than or equal to inject_layer 
-
+            # Filter read layers that are greater than injection layer
+            valid_read_layers = [rl for rl in self.read_layers if rl > inj_layer]
+            
+            for read_layer in self.progress_tracker.track_read_layers(valid_read_layers):
                 print(f"  Processing read layer {read_layer}...")
                 inject_hook = build_hook_name(inj_layer, self.config.inject_site)
                 read_hook = build_hook_name(read_layer, self.config.read_site)
 
                 # Get steered logits for all vector types using sweep_alpha
-                sweep_args = {
-                    'model': self.model,
-                    'alpha_values': self.alpha_values,
-                    'prompt': self.config.prefix,
-                    'inj_layer': inj_layer,
-                    'read_layer': read_layer,
-                    'inject_hook_name': inject_hook,
-                    'read_hook_name': read_hook,
-                    'prepend_bos': self.config.prepend_bos,
-                    'device': self.device,
-                    'steer_all_tokens': self.config.steer_all_tokens,
-                }
-                
                 logits_by_vec = {}
-                for vector_name in ["bias", "random", "orth"]:
+                for vector_name in self.progress_tracker.track_vector_types(["bias", "random", "orth"]):
                     logits_by_vec[vector_name] = sweep_alpha(
+                        self.model,
                         vectors[vector_name],
-                        **sweep_args
+                        self.alpha_values,
+                        self.config.prefix,
+                        inj_layer,
+                        read_layer,
+                        inject_hook,
+                        read_hook,
+                        self.config.prepend_bos,
+                        self.device,
+                        self.config.steer_all_tokens,
                     )
                 
                 bias_logits = logits_by_vec["bias"]
@@ -125,10 +128,10 @@ class Experiment:
                 random_diffs = metric_func(random_logits)
                 orth_diffs = metric_func(orth_logits)
 
-                # Debug prints for metric results
-                print(f"    Bias diffs: {bias_diffs}")
-                print(f"    Random diffs: {random_diffs}")
-                print(f"    Orth diffs: {orth_diffs}")
+                # Debug prints for metric results (first 5 values to check for NaNs)
+                print(f"    Bias diffs (first 5): {bias_diffs[:5]}")
+                print(f"    Random diffs (first 5): {random_diffs[:5]}")
+                print(f"    Orth diffs (first 5): {orth_diffs[:5]}")
 
                 # Update global min/max
                 for v in (*bias_diffs, *random_diffs, *orth_diffs):
@@ -153,7 +156,7 @@ class Experiment:
             yr = global_max - global_min
             fixed_limits = (global_min - 0.1 * yr, global_max + 0.1 * yr)
 
-        for item in results:
+        for item in self.progress_tracker.track_plotting(results):
             fig_path = plot_and_save_brc_curves(
                 item["bias"],  # type: ignore[arg-type]
                 item["random"],  # type: ignore[arg-type]
@@ -171,5 +174,4 @@ class Experiment:
                 model_name=self.config.model_name,
                 log_scale_both=self.config.log_scale_both,
             )
-            print("Saved:", fig_path)
-    
+            print("Saved:", fig_path)    

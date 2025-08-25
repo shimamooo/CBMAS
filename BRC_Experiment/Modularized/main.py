@@ -38,6 +38,7 @@ def run_quickstart() -> None:
         steer_all_tokens=True,
         use_log_scale=False,
         dataset="reassurance",  # Test our fixed reassurance dataset
+        show_progress=True,  # Enable progress tracking
     )
     Experiment(cfg).run_experiment()
 

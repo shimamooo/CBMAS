@@ -1,5 +1,7 @@
 import argparse
 from typing import Optional
+import time
+
 
 from BRC_Experiment.Modularized.config import ExperimentConfig
 
@@ -34,13 +36,17 @@ def build_parser() -> argparse.ArgumentParser:
     p.add_argument("--dataset", type=str, default="reassurance", 
                    choices=["winogender", "reassurance"],
                    help="Dataset to use: winogender (he/she bias) or reassurance (supportive/unsupportive responses)")
+    p.add_argument("--no-progress", action="store_true", 
+                   help="Disable progress bars for silent execution")
     return p
 
 
 def main(argv: Optional[list[str]] = None) -> None:
+    print("building parser")
     args = build_parser().parse_args(argv)
 
     # lightweight layer-spec parser to avoid importing utils on --help
+    print("parsing layer spec")
     def _parse_layer_spec(spec: str | None):
         if spec is None:
             return None
@@ -54,6 +60,7 @@ def main(argv: Optional[list[str]] = None) -> None:
             return list(range(int(a), int(b)))
         return [int(s)]
 
+    print("building config")
     config = ExperimentConfig(
         model_name=args.model_name,
         prepend_bos=args.prepend_bos,
@@ -71,13 +78,22 @@ def main(argv: Optional[list[str]] = None) -> None:
         steer_all_tokens=not args.steer_last_token_only,
         use_log_scale=args.use_log_scale,
         dataset=args.dataset,
+        show_progress=not args.no_progress,
     )
     # Import heavy modules only when actually executing, not on --help
-    from BRC_Experiment.Modularized.experiment import Experiment
+    import time
+    print("importing experiment")
+    start_time = time.time()
+    from BRC_Experiment.Modularized.experiment import Experiment #This line is causing slowness
+    end_time = time.time()
+    print(f"experiment imported in {end_time - start_time:.4f}s")
+    
+    print("running experiment")
     Experiment(config).run_experiment()
 
 
 if __name__ == "__main__":
+    print("Starting BRC experiment")
     main()
 
 

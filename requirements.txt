@@ -14,5 +14,6 @@ jaxtyping==0.2.33
 typeguard==2.13.3  # Required by jaxtyping 0.2.33
 
 pandas==2.2.2
+tqdm==4.66.4
 
 pytest==8.3.2
