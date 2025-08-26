@@ -105,7 +105,6 @@ def rank_changes(
 ) -> List[Dict[str, int]]:
     """
     Compute rank changes for target tokens across steering strengths.
-    
     Shows how token positions move in the sorted vocabulary as steering strength varies.
     
     Args:

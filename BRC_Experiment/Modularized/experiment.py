@@ -5,7 +5,7 @@ from BRC_Experiment.Modularized.model import load_model, get_pronoun_token_ids, 
 from BRC_Experiment.Modularized.plotting import plot_and_save_brc_curves
 from BRC_Experiment.Modularized.vectors import build_vectors
 from BRC_Experiment.Modularized.steering import sweep_alpha
-from BRC_Experiment.Modularized.metrics import logit_diffs, prob_diffs, compute_perplexity
+from BRC_Experiment.Modularized.metrics import logit_diffs, prob_diffs, compute_perplexity, odds_ratios
 from BRC_Experiment.Modularized.utils import build_alpha_range, configure_determinism, get_device, build_hook_name
 from BRC_Experiment.Modularized.observability import create_progress_tracker
 
@@ -40,28 +40,31 @@ class Experiment:
             list(self.config.read_layers) if self.config.read_layers is not None else list(range(n_layers)) # If read_layers is not specified, use all layers
         )
 
-    def _get_metric_function(self):
-        """Return the appropriate metric function based on config."""
-        if self.config.metric == "logit_diffs":
-            return lambda logits: logit_diffs(logits, self.choice1_id, self.choice2_id)
-        elif self.config.metric == "prob_diffs":
-            return lambda logits: prob_diffs(logits, self.choice1_id, self.choice2_id)
-        elif self.config.metric == "compute_perplexity":
-            # For perplexity, we'll compute for first choice token by default
-            return lambda logits: compute_perplexity(logits, self.choice1_id)
+    def _get_all_metric_functions(self):
+        """Return all available metric functions."""
+        return {
+            "logit_diffs": lambda logits: logit_diffs(logits, self.choice1_id, self.choice2_id),
+            "prob_diffs": lambda logits: prob_diffs(logits, self.choice1_id, self.choice2_id),
+            "odds_ratios": lambda logits: odds_ratios(logits, self.choice1_id, self.choice2_id),
+            "compute_perplexity": lambda logits: compute_perplexity(logits, self.choice1_id),
+        }
+    
+    def _get_metrics_to_run(self):
+        """Determine which metrics to run based on config."""
+        all_metrics = self._get_all_metric_functions()
+        if self.config.metric is None:
+            return all_metrics
         else:
-            raise ValueError(f"Unknown metric: {self.config.metric}")
+            if self.config.metric not in all_metrics:
+                raise ValueError(f"Unknown metric: {self.config.metric}")
+            return {self.config.metric: all_metrics[self.config.metric]}
 
     def run_experiment(self) -> None:
-        # ====== PHASE 1: Accumulate all curves and compute global y-limits ======
-        plotting_data: list[dict[str, object]] = [] # List of dicts of (inj_layer, read_layer, bias_diffs, random_diffs, orth_diffs) 
-        global_min: float | None = None
-        global_max: float | None = None 
-
-        metric_func = self._get_metric_function()
+        # ====== PHASE 1: Setup and determine metrics to run ======
+        metrics_to_run = self._get_metrics_to_run()
         progress_tracker = self.progress_tracker
-        
 
+        # ====== PHASE 2: Iterate through layer combinations and compute metrics ======
         for inj_layer in progress_tracker.track_injection_layers(self.inject_layers):
 
             vectors = build_vectors(
@@ -81,7 +84,8 @@ class Experiment:
                 inject_hook = build_hook_name(inj_layer, self.config.inject_site)
                 read_hook = build_hook_name(read_layer, self.config.read_site)
 
-                # Get steered logits for all vector types using sweep_alpha
+                # ====== PHASE 2a: Compute steered logits (batch computation) ======
+                # Get steered logits for all vector types using sweep_alpha (computed once, used for all metrics)
                 logits_by_vec = {}
                 for vector_name in progress_tracker.track_vector_types(["bias", "random", "orth"]):
                     logits_by_vec[vector_name] = sweep_alpha(
@@ -99,44 +103,38 @@ class Experiment:
                     )
                 bias_logits, random_logits, orth_logits = logits_by_vec["bias"], logits_by_vec["random"], logits_by_vec["orth"]
 
-                # Calculate differences using selected metric
-                bias_diffs = metric_func(bias_logits)
-                random_diffs = metric_func(random_logits)
-                orth_diffs = metric_func(orth_logits)
-
-                # append results
-                plotting_data.append({"inj": inj_layer, "read": read_layer, "bias": bias_diffs, "random": random_diffs, "orth": orth_diffs})
-
-                # Update global min/max
-                for v in (*bias_diffs, *random_diffs, *orth_diffs):
-                    global_min = v if global_min is None else min(global_min, v)
-                    global_max = v if global_max is None else max(global_max, v) #TODO: push this logic to be something returned by the metric function (instead of looping though results every time)
-
-
-        # ====== PHASE 2: Plot with fixed y-limits for consistency across figures ======
-        if global_max == global_min:
-            pad = 0.1 if global_max == 0 else abs(global_max) * 0.1
-            y_limits = (global_min - pad, global_max + pad)
-        else:
-            yr = global_max - global_min
-            y_limits = (global_min - 0.1 * yr, global_max + 0.1 * yr)
-
-        for item in progress_tracker.track_plotting(plotting_data):
-            plot_and_save_brc_curves(
-                bias_diffs = item["bias"],  
-                random_diffs = item["random"],
-                orth_diffs = item["orth"],  
-                alpha_values = self.alpha_values,
-                inj_layer = item["inj"],
-                read_layer = item["read"],
-                inject_site = self.config.inject_site,
-                read_site = self.config.read_site,
-                out_dir = self.config.out_dir,
-                y_limits=y_limits,
-                metric_name=self.config.metric,
-                use_log_scale=self.config.use_log_scale,
-                dataset_name=self.config.dataset,
-                model_name=self.config.model_name,
-                log_scale_both=self.config.log_scale_both,
-            )
+                # ====== PHASE 2b: Compute and plot each metric separately ======
+                # Process metrics with per-metric y-limits
+                for metric_name, metric_func in metrics_to_run.items():
+                    bias_diffs = metric_func(bias_logits)
+                    random_diffs = metric_func(random_logits)
+                    orth_diffs = metric_func(orth_logits)
+                    
+                    # Compute per-metric y-limits
+                    all_values = (*bias_diffs, *random_diffs, *orth_diffs)
+                    metric_min, metric_max = min(all_values), max(all_values)
+                    if metric_max == metric_min:
+                        pad = 0.1 if metric_max == 0 else abs(metric_max) * 0.1
+                        y_limits = (metric_min - pad, metric_max + pad)
+                    else:
+                        yr = metric_max - metric_min
+                        y_limits = (metric_min - 0.1 * yr, metric_max + 0.1 * yr)
+                    
+                    plot_and_save_brc_curves(
+                        bias_diffs=bias_diffs,
+                        random_diffs=random_diffs,
+                        orth_diffs=orth_diffs,
+                        alpha_values=self.alpha_values,
+                        inj_layer=inj_layer,
+                        read_layer=read_layer,
+                        inject_site=self.config.inject_site,
+                        read_site=self.config.read_site,
+                        out_dir=self.config.out_dir,
+                        y_limits=y_limits,
+                        metric_name=metric_name,
+                        use_log_scale=self.config.use_log_scale,
+                        dataset_name=self.config.dataset,
+                        model_name=self.config.model_name,
+                        log_scale_both=self.config.log_scale_both,
+                    )
 

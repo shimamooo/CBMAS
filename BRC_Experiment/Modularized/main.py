@@ -34,7 +34,7 @@ def run_quickstart() -> None:
         read_layers=None,  # All read layers (will use all 12 layers)
         seed=42,
         out_dir="graphs_debug_fixed",
-        metric="logit_diffs",  # Start with logit_diffs to see stronger signals
+        metric=None,  # Run all metrics to test batch functionality
         steer_all_tokens=True,
         use_log_scale=False,
         dataset="reassurance",  # Test our fixed reassurance dataset

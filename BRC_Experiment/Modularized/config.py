@@ -22,8 +22,8 @@ class ExperimentConfig:
     seed: int = 42
     out_dir: str = "graphs"
     
-    # Metric to use for calculating differences: logit_diffs, prob_diffs, or compute_perplexity
-    metric: str = "logit_diffs"
+    # Metric to use (if None, runs all available metrics)
+    metric: Optional[str] = None
     
     # Whether to steer all token positions or just the last token
     steer_all_tokens: bool = True

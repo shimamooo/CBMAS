@@ -26,9 +26,9 @@ def build_parser() -> argparse.ArgumentParser:
 
     p.add_argument("--seed", type=int, default=42)
     p.add_argument("--out-dir", type=str, default="graphs")
-    p.add_argument("--metric", type=str, default="logit_diffs", 
-                   choices=["logit_diffs", "prob_diffs", "compute_perplexity"],
-                   help="Metric to compute: logit_diffs (raw logit differences), prob_diffs (probability differences), or compute_perplexity (perplexity)")
+    p.add_argument("--metric", type=str, default=None, 
+                   choices=["logit_diffs", "prob_diffs", "compute_perplexity", "odds_ratios"],
+                   help="Metric to compute (if not specified, runs all metrics): logit_diffs, prob_diffs, odds_ratios, or compute_perplexity")
     p.add_argument("--steer-last-token-only", action="store_true", 
                    help="Steer only the last token position instead of all tokens (default: steer all tokens)")
     p.add_argument("--use-log-scale", action="store_true", 

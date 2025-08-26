@@ -58,7 +58,11 @@ def plot_and_save_brc_curves(
         color, lw = colors[name]
         ax.plot(alpha_list, series[name], label=name, color=color, linewidth=lw, marker="o", markersize=3)
 
-    ax.axhline(0, color="black", linestyle="--", linewidth=1)
+    # Add reference lines based on metric type #TODO: think about what other reference lines to add for other metrics and probably move logic to a separate function
+    if metric_name == "odds_ratios":
+        ax.axhline(1, color="black", linestyle="--", linewidth=1, alpha=0.7, label="Parity (1×)")
+    else:
+        ax.axhline(0, color="black", linestyle="--", linewidth=1)
 
     # ================ LABELS AND TITLE ================
     ax.set_xlabel(r"Steering coefficient $\alpha$", fontsize=14)
@@ -90,6 +94,9 @@ def plot_and_save_brc_curves(
     if metric_name == "prob_diffs":
         # For percentage-scaled probability differences
         y_linthresh = 1e-2  # 0.01% is a reasonable linear threshold
+    elif metric_name == "odds_ratios":
+        # For odds ratios, use threshold of 1.0 (parity line)
+        y_linthresh = 1.0
     else:
         # For logit differences and other metrics
         y_linthresh = 1e-6
@@ -122,6 +129,12 @@ def get_ylabel(metric_name: str) -> str:
         ylabel = r"$\Delta_{\mathrm{logit}} = \mathrm{logit}(Choice1) - \mathrm{logit}(Choice2)$"
     elif metric_name == "prob_diffs":
         ylabel = r"$\Delta_{\mathrm{prob}} = P(Choice1) - P(Choice2)$"
+    elif metric_name == "odds_ratios":
+        ylabel = r"Odds Ratio ($e^{\Delta}$)"
+    elif metric_name == "rank_changes":
+        ylabel = r"Token Rank"
+    elif metric_name == "kl_divergences":
+        ylabel = r"KL Divergence"
     elif metric_name == "compute_perplexity":
         ylabel = r"Perplexity"
     else:
