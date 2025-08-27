@@ -51,5 +51,6 @@ def build_vectors(
 
     bias_vec = unit_vector(bias_vec)
     rand_vec = unit_vector(torch.randn_like(bias_vec))
-    orth_vec = unit_vector(rand_vec - (rand_vec @ bias_vec) * bias_vec) # Orthogonal to bias vector
+    orth_seed = torch.randn_like(bias_vec)
+    orth_vec = unit_vector(orth_seed - (orth_seed @ bias_vec) * bias_vec) # Orthogonal to bias vector
     return {"bias": bias_vec, "random": rand_vec, "orth": orth_vec}

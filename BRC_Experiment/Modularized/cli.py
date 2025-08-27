@@ -27,8 +27,8 @@ def build_parser() -> argparse.ArgumentParser:
     p.add_argument("--seed", type=int, default=42)
     p.add_argument("--out-dir", type=str, default="graphs")
     p.add_argument("--metric", type=str, default=None, 
-                   choices=["logit_diffs", "prob_diffs", "compute_perplexity", "odds_ratios"],
-                   help="Metric to compute (if not specified, runs all metrics): logit_diffs, prob_diffs, odds_ratios, or compute_perplexity")
+                   choices=["logit_diffs", "prob_diffs", "compute_perplexity", "odds_ratios", "rank_changes"],
+                   help="Metric to compute (if not specified, runs all metrics): logit_diffs, prob_diffs, odds_ratios, compute_perplexity, or rank_changes")
     p.add_argument("--steer-last-token-only", action="store_true", 
                    help="Steer only the last token position instead of all tokens (default: steer all tokens)")
     p.add_argument("--use-log-scale", action="store_true", 
@@ -42,11 +42,9 @@ def build_parser() -> argparse.ArgumentParser:
 
 
 def main(argv: Optional[list[str]] = None) -> None:
-    print("building parser")
     args = build_parser().parse_args(argv)
 
     # lightweight layer-spec parser to avoid importing utils on --help
-    print("parsing layer spec")
     def _parse_layer_spec(spec: str | None):
         if spec is None:
             return None
@@ -60,7 +58,6 @@ def main(argv: Optional[list[str]] = None) -> None:
             return list(range(int(a), int(b)))
         return [int(s)]
 
-    print("building config")
     config = ExperimentConfig(
         model_name=args.model_name,
         prepend_bos=args.prepend_bos,
@@ -82,18 +79,14 @@ def main(argv: Optional[list[str]] = None) -> None:
     )
     # Import heavy modules only when actually executing, not on --help
     import time
-    print("importing experiment")
     start_time = time.time()
     from BRC_Experiment.Modularized.experiment import Experiment #This line is causing slowness
     end_time = time.time()
-    print(f"experiment imported in {end_time - start_time:.4f}s")
     
-    print("running experiment")
     Experiment(config).run_experiment()
 
 
 if __name__ == "__main__":
-    print("Starting BRC experiment")
     main()
 
 

@@ -101,33 +101,46 @@ def odds_ratios(logit_list: List[torch.Tensor], choice1_id: int, choice2_id: int
 @torch.no_grad()
 def rank_changes(
     logit_list: List[torch.Tensor], 
-    target_token_ids: List[int],
-) -> List[Dict[str, int]]:
+    choice1_id: int,
+    choice2_id: int,
+) -> Tuple[List[int], List[int]]:
     """
-    Compute rank changes for target tokens across steering strengths.
+    Compute rank changes for choice1 and choice2 tokens across steering strengths.
     Shows how token positions move in the sorted vocabulary as steering strength varies.
     
     Args:
         logit_list: List of logit tensors from model forward passes
-        target_token_ids: List of token IDs to track (e.g., [a_id, b_id])
+        choice1_id: Token ID for first choice
+        choice2_id: Token ID for second choice
     
     Returns:
-        List of dictionaries mapping token_id -> rank for each alpha value.
+        Tuple of (choice1_ranks, choice2_ranks) where each is a List[int] of ranks
     """
-    rank_changes_list = []
+    # Stack all logit tensors into a single batch dimension
+    logits_batch = torch.stack(logit_list)  # [batch_size, vocab_size]
     
-    for logits in logit_list:
-        # Sort logits in descending order and get ranks
-        sorted_indices = torch.argsort(logits, descending=True)
-        
-        # Create rank mapping: token_id -> rank (0-indexed)
-        rank_map = {int(token_id): int(rank) for rank, token_id in enumerate(sorted_indices)}
-        
-        # Extract ranks for target tokens
-        target_ranks = {token_id: rank_map[token_id] for token_id in target_token_ids}
-        rank_changes_list.append(target_ranks)
+    # Get ranks for both choice tokens in a single operation
+    # argsort gives indices sorted by value (ascending), so we need descending for ranks
+    sorted_indices = torch.argsort(logits_batch, dim=-1, descending=True)  # [batch_size, vocab_size]
     
-    return rank_changes_list
+    # Create rank tensors: for each position, what rank does each token have?
+    # We need to find where choice1_id and choice2_id appear in the sorted indices
+    vocab_size = logits_batch.shape[-1]
+    batch_size = logits_batch.shape[0]
+    
+    # Create a tensor where ranks[b, token_id] = rank of token_id in batch b
+    ranks = torch.zeros(batch_size, vocab_size, dtype=torch.long, device=logits_batch.device)
+    batch_indices = torch.arange(batch_size, device=logits_batch.device).unsqueeze(1)  # [batch_size, 1]
+    rank_indices = torch.arange(vocab_size, device=logits_batch.device).unsqueeze(0)   # [1, vocab_size]
+    
+    # Fill in the ranks: ranks[batch, token_id] = rank_position
+    ranks[batch_indices, sorted_indices] = rank_indices
+    
+    # Extract ranks for our target tokens
+    choice1_ranks = ranks[:, choice1_id].tolist()  # [batch_size]
+    choice2_ranks = ranks[:, choice2_id].tolist()  # [batch_size]
+    
+    return choice1_ranks, choice2_ranks
 
 
 # ==================== GLOBAL EFFECTS METRICS ====================

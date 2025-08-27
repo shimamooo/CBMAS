@@ -2,7 +2,7 @@ from typing import Iterable, Sequence
 import os
 import matplotlib.pyplot as plt
 
-
+#TODO: revamp plotting logic to be more modular and reusable
 def plot_and_save_brc_curves(
     bias_diffs: Sequence[float],
     random_diffs: Sequence[float],
@@ -23,6 +23,23 @@ def plot_and_save_brc_curves(
     """
     Plots and saves BRC curves for bias, random, and orth vectors.
     """
+    # Handle rank changes separately 
+    if metric_name == "rank_changes":
+        plot_rank_changes_and_save(
+            bias_diffs=bias_diffs,
+            random_diffs=random_diffs,
+            orth_diffs=orth_diffs,
+            alpha_values=alpha_values,
+            inj_layer=inj_layer,
+            read_layer=read_layer,
+            inject_site=inject_site,
+            read_site=read_site,
+            out_dir=out_dir,
+            y_limits=y_limits,
+            dataset_name=dataset_name,
+            model_name=model_name,
+        )
+        return
     # ================ STYLES AND COLORS ================
     colors = {
         "bias": ("#0072B2", 2.5),
@@ -153,4 +170,78 @@ def get_fig_path(out_dir, dataset_name, model_name, metric_name, inj_layer, read
     os.makedirs(out_dir_layer, exist_ok=True)
     fig_path = os.path.join(out_dir_layer, f"brc_{metric_name}_injL{inj_layer}_{inject_site}_readL{read_layer}_{read_site}.png")
     return fig_path
+
+
+def plot_rank_changes_and_save(
+    bias_diffs: Sequence[float],
+    random_diffs: Sequence[float], 
+    orth_diffs: Sequence[float],
+    alpha_values: Iterable[float],
+    inj_layer: int,
+    read_layer: int,
+    inject_site: str,
+    read_site: str,
+    out_dir: str,
+    y_limits: tuple[float, float],
+    dataset_name: str = "reassurance",
+    model_name: str = "gpt2",
+) -> None:
+    """
+    Plots and saves rank change curves with dual overlaid lines and inverted y-axis.
     
+    Note: For rank_changes, bias_diffs contains (choice1_ranks, choice2_ranks) tuple. #TODO: this is a hack and should be removed
+    We only use bias vector data since random/orth aren't meaningful for rank analysis.
+    """
+    plt.style.use("seaborn-v0_8-whitegrid")
+    fig, ax = plt.subplots(figsize=(9, 6))
+    
+    alpha_list = list(alpha_values)
+    
+    # Extract rank data from bias vector (only vector that matters for rank analysis)
+    choice1_ranks, choice2_ranks = bias_diffs
+    
+    # Plot dual lines for choice1 and choice2 ranks (match BRC curve style)
+    ax.plot(alpha_list, choice1_ranks, label="Choice 1", color="#0072B2", linewidth=2.5, marker="o", markersize=3)
+    ax.plot(alpha_list, choice2_ranks, label="Choice 2", color="#D55E00", linewidth=2.0, marker="o", markersize=3)
+    
+    # Find and annotate crossing point (where choice1 overtakes choice2)
+    for i, (r1, r2) in enumerate(zip(choice1_ranks, choice2_ranks)):
+        if i > 0:  # Need at least 2 points to detect crossing
+            prev_r1, prev_r2 = choice1_ranks[i-1], choice2_ranks[i-1]
+            # Check if lines crossed (r1 was worse but now better, or vice versa)
+            if (prev_r1 > prev_r2 and r1 < r2) or (prev_r1 < prev_r2 and r1 > r2):
+                crossing_alpha = alpha_list[i]
+                crossing_rank = min(r1, r2)  # Use the better rank for annotation
+                ax.axvline(crossing_alpha, color="red", linestyle="--", alpha=0.7, linewidth=1)
+                ax.annotate(f"Crossing: α={crossing_alpha:.1f}", 
+                           xy=(crossing_alpha, crossing_rank), 
+                           xytext=(10, 10), textcoords="offset points",
+                           fontsize=10, ha='left',
+                           bbox=dict(boxstyle="round,pad=0.3", facecolor="yellow", alpha=0.7))
+                break
+    
+    # Set up inverted y-axis (rank 1 at top)
+    ax.invert_yaxis()
+    
+    # Simple y-axis label indicating it's flipped
+    ax.set_ylabel("Token Rank (flipped axis)", fontsize=14)
+    
+    # Use global y-limits passed from experiment
+    ax.set_ylim(y_limits[0], y_limits[1])
+    
+    # Labels and formatting
+    ax.set_xlabel(r"Steering coefficient $\alpha$", fontsize=14)
+    ax.set_title(
+        f"BRC (rank_changes) | inject: L{inj_layer}:{inject_site} → read: L{read_layer}:{read_site}",
+        fontsize=15,
+        weight="bold",
+    )
+    
+    ax.legend(frameon=True, fontsize=11)
+    ax.tick_params(axis="both", which="major", labelsize=12)
+    ax.grid(True, alpha=0.3)
+    
+    # Save the plot
+    plt.tight_layout()
+    plt.savefig(get_fig_path(out_dir, dataset_name, model_name, "rank_changes", inj_layer, read_layer, read_site, inject_site), dpi=300, bbox_inches="tight")
+    plt.close(fig)

@@ -5,7 +5,7 @@ from BRC_Experiment.Modularized.model import load_model, get_pronoun_token_ids, 
 from BRC_Experiment.Modularized.plotting import plot_and_save_brc_curves
 from BRC_Experiment.Modularized.vectors import build_vectors
 from BRC_Experiment.Modularized.steering import sweep_alpha
-from BRC_Experiment.Modularized.metrics import logit_diffs, prob_diffs, compute_perplexity, odds_ratios
+from BRC_Experiment.Modularized.metrics import logit_diffs, prob_diffs, compute_perplexity, odds_ratios, rank_changes
 from BRC_Experiment.Modularized.utils import build_alpha_range, configure_determinism, get_device, build_hook_name
 from BRC_Experiment.Modularized.observability import create_progress_tracker
 
@@ -47,6 +47,7 @@ class Experiment:
             "prob_diffs": lambda logits: prob_diffs(logits, self.choice1_id, self.choice2_id),
             "odds_ratios": lambda logits: odds_ratios(logits, self.choice1_id, self.choice2_id),
             "compute_perplexity": lambda logits: compute_perplexity(logits, self.choice1_id),
+            "rank_changes": lambda logits: rank_changes(logits, self.choice1_id, self.choice2_id),
         }
     
     def _get_metrics_to_run(self):
@@ -58,13 +59,18 @@ class Experiment:
             if self.config.metric not in all_metrics:
                 raise ValueError(f"Unknown metric: {self.config.metric}")
             return {self.config.metric: all_metrics[self.config.metric]}
+    #TODO: Above do basically the same thing as below, so consolidate
+    
 
     def run_experiment(self) -> None:
         # ====== PHASE 1: Setup and determine metrics to run ======
         metrics_to_run = self._get_metrics_to_run()
         progress_tracker = self.progress_tracker
-
+        
         # ====== PHASE 2: Iterate through layer combinations and compute metrics ======
+        # For rank_changes, collect global data and defer plotting
+        all_rank_data = []
+        rank_results = []
         for inj_layer in progress_tracker.track_injection_layers(self.inject_layers):
 
             vectors = build_vectors(
@@ -104,37 +110,60 @@ class Experiment:
                 bias_logits, random_logits, orth_logits = logits_by_vec["bias"], logits_by_vec["random"], logits_by_vec["orth"]
 
                 # ====== PHASE 2b: Compute and plot each metric separately ======
-                # Process metrics with per-metric y-limits
+                # Process metrics with per-metric y-limits TODO: possibly move this to plotting.py
                 for metric_name, metric_func in metrics_to_run.items():
                     bias_diffs = metric_func(bias_logits)
                     random_diffs = metric_func(random_logits)
                     orth_diffs = metric_func(orth_logits)
                     
-                    # Compute per-metric y-limits
-                    all_values = (*bias_diffs, *random_diffs, *orth_diffs)
-                    metric_min, metric_max = min(all_values), max(all_values)
-                    if metric_max == metric_min:
-                        pad = 0.1 if metric_max == 0 else abs(metric_max) * 0.1
-                        y_limits = (metric_min - pad, metric_max + pad)
-                    else:
-                        yr = metric_max - metric_min
-                        y_limits = (metric_min - 0.1 * yr, metric_max + 0.1 * yr)
+                    # Collect rank data for global y-limits if needed
+                    if metric_name == "rank_changes":
+                        choice1_ranks, choice2_ranks = bias_diffs
+                        all_rank_data.extend(choice1_ranks + choice2_ranks)
                     
-                    plot_and_save_brc_curves(
-                        bias_diffs=bias_diffs,
-                        random_diffs=random_diffs,
-                        orth_diffs=orth_diffs,
-                        alpha_values=self.alpha_values,
-                        inj_layer=inj_layer,
-                        read_layer=read_layer,
-                        inject_site=self.config.inject_site,
-                        read_site=self.config.read_site,
-                        out_dir=self.config.out_dir,
-                        y_limits=y_limits,
-                        metric_name=metric_name,
-                        use_log_scale=self.config.use_log_scale,
-                        dataset_name=self.config.dataset,
-                        model_name=self.config.model_name,
-                        log_scale_both=self.config.log_scale_both,
-                    )
-
+                    # Store all results for plotting (including rank_changes)
+                    rank_results.append((inj_layer, read_layer, bias_diffs, random_diffs, orth_diffs, metric_name))
+        
+        # ====== PHASE 3: Plot all results ======
+        # Compute global rank limits if needed
+        if "rank_changes" in metrics_to_run and all_rank_data:
+            min_rank, max_rank = min(all_rank_data), max(all_rank_data)
+            rank_range = max_rank - min_rank
+            # Ensure padding doesn't make min_rank negative
+            y_padding = min(rank_range * 0.1, min_rank - 1) if min_rank > 1 else 0
+            global_rank_limits = (max_rank + y_padding, max(1, min_rank - y_padding))
+        else:
+            global_rank_limits = (1000, 1)
+        
+        # Plot all results with appropriate y-limits
+        for inj_layer, read_layer, bias_diffs, random_diffs, orth_diffs, metric_name in rank_results:
+            if metric_name == "rank_changes":
+                y_limits = global_rank_limits
+            else:
+                # Compute per-metric y-limits for scalar metrics
+                all_values = (*bias_diffs, *random_diffs, *orth_diffs)
+                metric_min, metric_max = min(all_values), max(all_values)
+                if metric_max == metric_min:
+                    pad = 0.1 if metric_max == 0 else abs(metric_max) * 0.1
+                    y_limits = (metric_min - pad, metric_max + pad)
+                else:
+                    yr = metric_max - metric_min
+                    y_limits = (metric_min - 0.1 * yr, metric_max + 0.1 * yr)
+            
+            plot_and_save_brc_curves(
+                bias_diffs=bias_diffs,
+                random_diffs=random_diffs,
+                orth_diffs=orth_diffs,
+                alpha_values=self.alpha_values,
+                inj_layer=inj_layer,
+                read_layer=read_layer,
+                inject_site=self.config.inject_site,
+                read_site=self.config.read_site,
+                out_dir=self.config.out_dir,
+                y_limits=y_limits,
+                metric_name=metric_name,
+                use_log_scale=self.config.use_log_scale,
+                dataset_name=self.config.dataset,
+                model_name=self.config.model_name,
+                log_scale_both=self.config.log_scale_both,
+            )
