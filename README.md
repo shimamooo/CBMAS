@@ -1,4 +1,4 @@
-# BRC Experiment (Modularized)
+# Cognitive Behavioral Modeling via Activation Steering (CBMAS)
 
 A modular, production-style refactor of a Bias-Repelling Control (BRC) experiment built on TransformerLens. It supports multiple datasets (Winogender for gender bias, Reassurance for supportive/unsupportive responses), constructs steering vectors, sweeps steering strengths (alpha), and plots differences using configurable metrics (logit differences, probability differences, or perplexity).
 
@@ -137,4 +137,4 @@ A pytest suite can be created to mock heavy dependencies. Example categories:
 - cli: argument plumbing
 
 ## License
-MIT
+CC-BY 4.0
