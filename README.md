@@ -137,4 +137,4 @@ A pytest suite can be created to mock heavy dependencies. Example categories:
 - cli: argument plumbing
 
 ## License
-MIT
+CC-BY 4.0
