@@ -5,7 +5,7 @@ from BRC_Experiment.Modularized.model import load_model, get_pronoun_token_ids, 
 from BRC_Experiment.Modularized.plotting import plot_and_save_brc_curves
 from BRC_Experiment.Modularized.vectors import build_vectors
 from BRC_Experiment.Modularized.steering import sweep_alpha
-from BRC_Experiment.Modularized.metrics import logit_diffs, prob_diffs, compute_perplexity, odds_ratios, rank_changes
+from BRC_Experiment.Modularized.metrics import logit_diffs, prob_diffs, compute_perplexity, odds_ratios, rank_changes, kl_divergences
 from BRC_Experiment.Modularized.utils import build_alpha_range, configure_determinism, get_device, build_hook_name
 from BRC_Experiment.Modularized.observability import create_progress_tracker
 
@@ -39,28 +39,25 @@ class Experiment:
         self.read_layers = (
             list(self.config.read_layers) if self.config.read_layers is not None else list(range(n_layers)) # If read_layers is not specified, use all layers
         )
-
-    def _get_all_metric_functions(self):
-        """Return all available metric functions."""
-        return {
+    
+    def _get_metrics_to_run(self):
+        """Determine which metrics to run based on config."""
+        all_metrics = {
             "logit_diffs": lambda logits: logit_diffs(logits, self.choice1_id, self.choice2_id),
             "prob_diffs": lambda logits: prob_diffs(logits, self.choice1_id, self.choice2_id),
             "odds_ratios": lambda logits: odds_ratios(logits, self.choice1_id, self.choice2_id),
             "compute_perplexity": lambda logits: compute_perplexity(logits, self.choice1_id),
             "rank_changes": lambda logits: rank_changes(logits, self.choice1_id, self.choice2_id),
+            "kl_divergences": lambda logits: kl_divergences(logits, self.alpha_values),
         }
-    
-    def _get_metrics_to_run(self):
-        """Determine which metrics to run based on config."""
-        all_metrics = self._get_all_metric_functions()
         if self.config.metric is None:
             return all_metrics
         else:
             if self.config.metric not in all_metrics:
                 raise ValueError(f"Unknown metric: {self.config.metric}")
             return {self.config.metric: all_metrics[self.config.metric]}
-    #TODO: Above do basically the same thing as below, so consolidate
-    
+
+
 
     def run_experiment(self) -> None:
         # ====== PHASE 1: Setup and determine metrics to run ======
@@ -68,9 +65,9 @@ class Experiment:
         progress_tracker = self.progress_tracker
         
         # ====== PHASE 2: Iterate through layer combinations and compute metrics ======
-        # For rank_changes, collect global data and defer plotting
-        all_rank_data = []
-        rank_results = []
+        # Collect all metric data for global y-limits computation
+        all_metric_data = {}  # metric_name -> list of all values
+        all_results = []
         for inj_layer in progress_tracker.track_injection_layers(self.inject_layers):
 
             vectors = build_vectors(
@@ -109,51 +106,62 @@ class Experiment:
                     )
                 bias_logits, random_logits, orth_logits = logits_by_vec["bias"], logits_by_vec["random"], logits_by_vec["orth"]
 
-                # ====== PHASE 2b: Compute and plot each metric separately ======
-                # Process metrics with per-metric y-limits TODO: possibly move this to plotting.py
+                # ====== PHASE 2b: Compute each metric and collect data for global limits ======
                 for metric_name, metric_func in metrics_to_run.items():
-                    bias_diffs = metric_func(bias_logits)
-                    random_diffs = metric_func(random_logits)
-                    orth_diffs = metric_func(orth_logits)
+                    bias_results = metric_func(bias_logits)
+                    random_results = metric_func(random_logits)
+                    orth_results = metric_func(orth_logits)
                     
-                    # Collect rank data for global y-limits if needed
+                    # Initialize metric data collection if first time seeing this metric
+                    if metric_name not in all_metric_data:
+                        all_metric_data[metric_name] = []
+                    
+                    # Collect data for global y-limits (handle special cases)
                     if metric_name == "rank_changes":
-                        choice1_ranks, choice2_ranks = bias_diffs
-                        all_rank_data.extend(choice1_ranks + choice2_ranks)
+                        choice1_ranks, choice2_ranks = bias_results
+                        all_metric_data[metric_name].extend(choice1_ranks + choice2_ranks)
+                    elif metric_name == "kl_divergences":
+                        # For KL divergence, only bias vector is meaningful
+                        all_metric_data[metric_name].extend(bias_results)
+                    else:
+                        # For scalar metrics, collect all values from all vectors
+                        all_metric_data[metric_name].extend([*bias_results, *random_results, *orth_results])
                     
-                    # Store all results for plotting (including rank_changes)
-                    rank_results.append((inj_layer, read_layer, bias_diffs, random_diffs, orth_diffs, metric_name))
+                    # Store all results for plotting
+                    all_results.append((inj_layer, read_layer, bias_results, random_results, orth_results, metric_name))
         
-        # ====== PHASE 3: Plot all results ======
-        # Compute global rank limits if needed
-        if "rank_changes" in metrics_to_run and all_rank_data:
-            min_rank, max_rank = min(all_rank_data), max(all_rank_data)
-            rank_range = max_rank - min_rank
-            # Ensure padding doesn't make min_rank negative
-            y_padding = min(rank_range * 0.1, min_rank - 1) if min_rank > 1 else 0
-            global_rank_limits = (max_rank + y_padding, max(1, min_rank - y_padding))
-        else:
-            global_rank_limits = (1000, 1)
-        
-        # Plot all results with appropriate y-limits
-        for inj_layer, read_layer, bias_diffs, random_diffs, orth_diffs, metric_name in rank_results:
+        # ====== PHASE 3: Compute global y-limits for all metrics ======
+        global_y_limits = {}
+        for metric_name, data in all_metric_data.items():
+            if not data:
+                continue
+                
             if metric_name == "rank_changes":
-                y_limits = global_rank_limits
+                # Special handling for ranks (inverted axis)
+                min_rank, max_rank = min(data), max(data)
+                rank_range = max_rank - min_rank
+                y_padding = min(rank_range * 0.1, min_rank - 1) if min_rank > 1 else 0
+                global_y_limits[metric_name] = (max_rank + y_padding, max(1, min_rank - y_padding))
             else:
-                # Compute per-metric y-limits for scalar metrics
-                all_values = (*bias_diffs, *random_diffs, *orth_diffs)
-                metric_min, metric_max = min(all_values), max(all_values)
+                # Standard global limits for scalar metrics
+                metric_min, metric_max = min(data), max(data)
                 if metric_max == metric_min:
                     pad = 0.1 if metric_max == 0 else abs(metric_max) * 0.1
-                    y_limits = (metric_min - pad, metric_max + pad)
+                    global_y_limits[metric_name] = (metric_min - pad, metric_max + pad)
                 else:
                     yr = metric_max - metric_min
-                    y_limits = (metric_min - 0.1 * yr, metric_max + 0.1 * yr)
+                    y_min = metric_min - 0.1 * yr
+                    y_max = metric_max + 0.1 * yr
+                    global_y_limits[metric_name] = (y_min, y_max)
+        
+        # ====== PHASE 4: Plot all results with global y-limits ======
+        for inj_layer, read_layer, bias_results, random_results, orth_results, metric_name in all_results:
+            y_limits = global_y_limits.get(metric_name, (0, 1))  # Fallback if no data
             
             plot_and_save_brc_curves(
-                bias_diffs=bias_diffs,
-                random_diffs=random_diffs,
-                orth_diffs=orth_diffs,
+                bias_diffs=bias_results,
+                random_diffs=random_results,
+                orth_diffs=orth_results,
                 alpha_values=self.alpha_values,
                 inj_layer=inj_layer,
                 read_layer=read_layer,

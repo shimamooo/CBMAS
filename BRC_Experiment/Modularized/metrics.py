@@ -175,33 +175,46 @@ def compute_perplexity(logit_list: List[torch.Tensor], target_token_id: int) -> 
 
 @torch.no_grad()
 def kl_divergences(
-    original_logits: List[torch.Tensor], 
-    steered_logits: List[torch.Tensor]
+    logit_list: List[torch.Tensor], 
+    alpha_values: List[float]
 ) -> List[float]:
     """
-    Compute KL divergence between original and steered distributions.
+    Compute KL divergence between baseline (α=0) and steered distributions.
     
     Measures overall shift of the whole distribution, not just target tokens.
     High KL = steering perturbs many logits (broad/noisy effect).
     Low KL = steering is specific to bias direction.
     
     Args:
-        original_logits: List of baseline logit tensors (α=0)
-        steered_logits: List of steered logit tensors (various α values)
+        logit_list: List of logit tensors from model forward passes
+        alpha_values: List of alpha values corresponding to logit_list
     
     Returns:
-        List of KL divergence values D_KL(P_original || P_steered)
+        List of KL divergence values D_KL(P_baseline || P_steered) (ordered from baseline to highest alpha)
     """    
-    kl_divs = []
-    for orig_logits, steer_logits in zip(original_logits, steered_logits):
-        orig_probs = torch.softmax(orig_logits, dim=-1)
-        steer_probs = torch.softmax(steer_logits, dim=-1)
-        
-        # KL divergence: D_KL(P||Q) = Σ P(x) * log(P(x) / Q(x))
-        kl_div = torch.sum(orig_probs * torch.log(orig_probs / (steer_probs + 1e-10))).item()
-        kl_divs.append(kl_div)
+    # Find baseline index (alpha closest to 0)
+    baseline_idx = min(range(len(alpha_values)), key=lambda i: abs(alpha_values[i]))
+    baseline_logits = logit_list[baseline_idx]
     
-    return kl_divs
+    # Stack all logit tensors into batch dimensions
+    logits_batch = torch.stack(logit_list)  # [batch_size, vocab_size]
+    
+    # Create baseline batch (repeat baseline for each alpha)
+    baseline_batch = baseline_logits.unsqueeze(0).expand_as(logits_batch)  # [batch_size, vocab_size]
+    
+    # Compute softmax probabilities in batched operations
+    baseline_probs_batch = torch.softmax(baseline_batch, dim=-1)  # [batch_size, vocab_size]
+    steered_probs_batch = torch.softmax(logits_batch, dim=-1)  # [batch_size, vocab_size]
+    
+    # Compute KL divergence in a single batched operation
+    # KL divergence: D_KL(P||Q) = sum P(x) * log(P(x) / Q(x))
+    # Add small epsilon to avoid log(0)
+    kl_divs_batch = torch.sum(
+        baseline_probs_batch * torch.log(baseline_probs_batch / (steered_probs_batch + 1e-10)), 
+        dim=-1
+    )  # [batch_size] [KL(P_0||P_-2), KL(P_0||P_-1), KL(P_0||P_0), KL(P_0||P_1), KL(P_0||P_2)]
+    
+    return kl_divs_batch.tolist()
 
 
 #vault for now.

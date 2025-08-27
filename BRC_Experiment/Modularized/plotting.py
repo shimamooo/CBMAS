@@ -23,12 +23,27 @@ def plot_and_save_brc_curves(
     """
     Plots and saves BRC curves for bias, random, and orth vectors.
     """
-    # Handle rank changes separately 
+
+    # Handle special metrics 
     if metric_name == "rank_changes":
         plot_rank_changes_and_save(
             bias_diffs=bias_diffs,
             random_diffs=random_diffs,
             orth_diffs=orth_diffs,
+            alpha_values=alpha_values,
+            inj_layer=inj_layer,
+            read_layer=read_layer,
+            inject_site=inject_site,
+            read_site=read_site,
+            out_dir=out_dir,
+            y_limits=y_limits,
+            dataset_name=dataset_name,
+            model_name=model_name,
+        )
+        return
+    elif metric_name == "kl_divergences":
+        plot_kl_divergences_and_save(
+            bias_diffs=bias_diffs,
             alpha_values=alpha_values,
             inj_layer=inj_layer,
             read_layer=read_layer,
@@ -78,6 +93,20 @@ def plot_and_save_brc_curves(
     # Add reference lines based on metric type #TODO: think about what other reference lines to add for other metrics and probably move logic to a separate function
     if metric_name == "odds_ratios":
         ax.axhline(1, color="black", linestyle="--", linewidth=1, alpha=0.7, label="Parity (1×)")
+        
+        # Annotate the highest odds ratio value for each vector
+        for name in ["bias", "random", "orth"]:
+            values = series[name]
+            max_idx = values.index(max(values))
+            max_value = values[max_idx]
+            max_alpha = alpha_list[max_idx]
+            
+            # Add annotation showing the actual odds ratio value
+            ax.annotate(f'{max_value:.1f}×', 
+                       xy=(max_alpha, max_value), 
+                       xytext=(5, 5), textcoords='offset points',
+                       fontsize=9, ha='left', va='bottom',
+                       bbox=dict(boxstyle="round,pad=0.2", facecolor=colors[name][0], alpha=0.3))
     else:
         ax.axhline(0, color="black", linestyle="--", linewidth=1)
 
@@ -151,7 +180,7 @@ def get_ylabel(metric_name: str) -> str:
     elif metric_name == "rank_changes":
         ylabel = r"Token Rank"
     elif metric_name == "kl_divergences":
-        ylabel = r"KL Divergence"
+        ylabel = r"KL Divergence (nats)"
     elif metric_name == "compute_perplexity":
         ylabel = r"Perplexity"
     else:
@@ -244,4 +273,53 @@ def plot_rank_changes_and_save(
     # Save the plot
     plt.tight_layout()
     plt.savefig(get_fig_path(out_dir, dataset_name, model_name, "rank_changes", inj_layer, read_layer, read_site, inject_site), dpi=300, bbox_inches="tight")
+    plt.close(fig)
+
+
+def plot_kl_divergences_and_save(
+    bias_diffs: Sequence[float],
+    alpha_values: Iterable[float],
+    inj_layer: int,
+    read_layer: int,
+    inject_site: str,
+    read_site: str,
+    out_dir: str,
+    y_limits: tuple[float, float],
+    dataset_name: str = "reassurance",
+    model_name: str = "gpt2",
+) -> None:
+    """
+    Plots and saves KL divergence curves with only the bias vector.
+    """
+    plt.style.use("seaborn-v0_8-whitegrid")
+    fig, ax = plt.subplots(figsize=(9, 6))
+    
+    alpha_list = list(alpha_values)
+    kl_values = list(bias_diffs)  # Only bias vector data
+    
+    # Plot single line for bias KL divergence (match BRC curve style)
+    ax.plot(alpha_list, kl_values, label="Bias steering", color="#0072B2", linewidth=2.5, marker="o", markersize=3)
+    
+    # Add reference line at KL=0 (no divergence from baseline)
+    ax.axhline(0, color="black", linestyle="--", linewidth=1, alpha=0.7)
+    
+    # Labels and formatting
+    ax.set_xlabel(r"Steering coefficient $\alpha$", fontsize=14)
+    ax.set_ylabel("KL Divergence (nats)", fontsize=14)
+    ax.set_title(
+        f"BRC (kl_divergences) | inject: L{inj_layer}:{inject_site} → read: L{read_layer}:{read_site}",
+        fontsize=15,
+        weight="bold",
+    )
+    
+    # Use global y-limits for consistency across plots
+    ax.set_ylim(y_limits[0], y_limits[1])
+    
+    ax.legend(frameon=True, fontsize=11)
+    ax.tick_params(axis="both", which="major", labelsize=12)
+    ax.grid(True, alpha=0.3)
+    
+    # Save the plot
+    plt.tight_layout()
+    plt.savefig(get_fig_path(out_dir, dataset_name, model_name, "kl_divergences", inj_layer, read_layer, read_site, inject_site), dpi=300, bbox_inches="tight")
     plt.close(fig)
