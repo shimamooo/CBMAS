@@ -77,6 +77,8 @@ class Experiment:
                 self.config.prepend_bos,
                 self.device,
                 inject_site=self.config.inject_site,
+                model_name=self.config.model_name,
+                dataset=self.config.dataset,
             ) # Build vectors for each inject_layer
 
             # Filter read layers that are greater than injection layer

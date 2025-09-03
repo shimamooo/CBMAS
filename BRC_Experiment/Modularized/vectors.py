@@ -5,6 +5,7 @@ import torch
 from transformer_lens import HookedTransformer
 
 from BRC_Experiment.Modularized.utils import unit_vector
+from BRC_Experiment.Modularized.cache import VectorCache
 
 
 @torch.no_grad()
@@ -29,9 +30,14 @@ def build_vectors(
     prepend_bos: bool,
     device: torch.device,
     inject_site: str,
+    model_name: str = "",
+    dataset: str = "",
 ) -> dict[str, torch.Tensor]:
     """
     Build bias, random, and orthogonal steering vectors.
+    
+    Uses cache-aside pattern: always check cache first, compute and cache if missing,
+    then return the cached result.
     
     Args:
         model: The transformer model
@@ -40,10 +46,24 @@ def build_vectors(
         prepend_bos: Whether to prepend BOS token
         device: Device to run computations on
         inject_site: Hook site name (e.g., 'hook_resid_mid')
+        model_name: Name of the model (for caching)
+        dataset: Name of the dataset (for caching)
     
     Returns:
         Dictionary with 'bias', 'random', and 'orth' unit vectors
     """
+    # Initialize cache
+    cache = VectorCache()
+    
+    # Always try to load from cache first
+    if model_name and dataset:
+        cached_vectors = cache.load(model_name, dataset, inj_layer, inject_site, device)
+        if cached_vectors is not None:
+            print(f"USING CACHED VECTORS FOR {model_name}_{dataset}_layer{inj_layer}_{inject_site}")
+            return cached_vectors
+    
+    # Compute vectors if not cached
+    print(f"Computing vectors for {model_name}_{dataset}_layer{inj_layer}_{inject_site}")
     bias_vec = torch.stack([
         residual_at_last_token(model, p_f, inj_layer, inject_site, prepend_bos, device) - residual_at_last_token(model, p_m, inj_layer, inject_site, prepend_bos, device)
         for (p_f, p_m) in prompt_pairs
@@ -53,4 +73,11 @@ def build_vectors(
     rand_vec = unit_vector(torch.randn_like(bias_vec))
     orth_seed = torch.randn_like(bias_vec)
     orth_vec = unit_vector(orth_seed - (orth_seed @ bias_vec) * bias_vec) # Orthogonal to bias vector
-    return {"bias": bias_vec, "random": rand_vec, "orth": orth_vec}
+    
+    vectors = {"bias": bias_vec, "random": rand_vec, "orth": orth_vec}
+    
+    # Always save to cache after computing
+    if model_name and dataset:
+        cache.save(vectors, model_name, dataset, inj_layer, inject_site)
+    
+    return vectors
