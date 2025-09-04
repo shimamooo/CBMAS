@@ -1,7 +1,7 @@
 from __future__ import annotations
 from BRC_Experiment.Modularized.config import ExperimentConfig
-from BRC_Experiment.Modularized.data import load_winogender_pairs, load_reassurance_pairs
-from BRC_Experiment.Modularized.model import load_model, get_pronoun_token_ids, get_choice_token_ids
+from BRC_Experiment.Modularized.data import load_train_dataset, load_test_dataset
+from BRC_Experiment.Modularized.model import load_model, get_choice_token_ids
 from BRC_Experiment.Modularized.plotting import plot_and_save_brc_curves
 from BRC_Experiment.Modularized.vectors import build_vectors
 from BRC_Experiment.Modularized.steering import sweep_alpha
@@ -18,27 +18,20 @@ class Experiment:
         self.device = get_device() # Get device for model
         self.model = load_model(self.config.model_name, self.device, self.progress_tracker) # Load model with progress tracking
         
-        # Load dataset and get appropriate token IDs based on dataset choice
-        if self.config.dataset == "reassurance":
-            self.prompt_pairs = load_reassurance_pairs()
-            self.choice1_id, self.choice2_id = get_choice_token_ids(self.model)
-        else:  # winogender
-            self.prompt_pairs = load_winogender_pairs()
-            self.choice1_id, self.choice2_id = get_pronoun_token_ids(self.model) #TODO: consolidate to one data loading function
+        # Load both train and test datasets
+        self.train_prompt_pairs = load_train_dataset(self.config.dataset)
+        self.test_prompts = load_test_dataset(self.config.dataset)
+
+        # Get choice token IDs (assuming all datasets use the same choice format)
+        self.choice1_id, self.choice2_id = get_choice_token_ids(self.model)
 
         # Build alpha range
-        self.alpha_values = build_alpha_range(
-            self.config.alpha_start, self.config.alpha_stop, self.config.alpha_step
-        ) 
+        self.alpha_values = build_alpha_range(self.config.alpha_start, self.config.alpha_stop, self.config.alpha_step) 
 
         # Get sequence of inject and read layers
         n_layers = self.model.cfg.n_layers # Get total number of layers in model
-        self.inject_layers = (
-            list(self.config.inject_layers) if self.config.inject_layers is not None else list(range(n_layers)) # If inject_layers is not specified, use all layers
-        )
-        self.read_layers = (
-            list(self.config.read_layers) if self.config.read_layers is not None else list(range(n_layers)) # If read_layers is not specified, use all layers
-        )
+        self.inject_layers = (list(self.config.inject_layers) if self.config.inject_layers is not None else list(range(n_layers))) # If inject_layers is not specified, use all layers
+        self.read_layers = (list(self.config.read_layers) if self.config.read_layers is not None else list(range(n_layers))) # If read_layers is not specified, use all layers  
     
     def _get_metrics_to_run(self):
         """Determine which metrics to run based on config."""
@@ -73,7 +66,7 @@ class Experiment:
             vectors = build_vectors(
                 self.model,
                 inj_layer,
-                self.prompt_pairs,
+                self.train_prompt_pairs,
                 self.config.prepend_bos,
                 self.device,
                 inject_site=self.config.inject_site,
@@ -91,13 +84,16 @@ class Experiment:
 
                 # ====== PHASE 2a: Compute steered logits (batch computation) ======
                 # Get steered logits for all vector types using sweep_alpha (computed once, used for all metrics)
+                # Use the first test prompt for evaluation
+                test_prompt = self.test_prompts[0]
+
                 logits_by_vec = {}
                 for vector_name in progress_tracker.track_vector_types(["bias", "random", "orth"]):
                     logits_by_vec[vector_name] = sweep_alpha(
                         self.model,
                         vectors[vector_name],
                         self.alpha_values,
-                        self.config.prefix,
+                        test_prompt,
                         inj_layer,
                         read_layer,
                         inject_hook,
