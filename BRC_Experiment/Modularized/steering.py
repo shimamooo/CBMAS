@@ -68,26 +68,25 @@ def sweep_alpha(
     prepend_bos: bool,
     device: torch.device,
     steer_all_tokens: bool = True,
-) -> List[torch.Tensor]:
+) -> torch.Tensor:
     """
-    Returns: A list of logits for each alpha value.
+    Returns a tensor of shape [n_alphas, vocab_size] with last-token logits
     """
-    logits_list: List[torch.Tensor] = []
+    out = []
     for alpha in alpha_values:
+        alpha = float(alpha)
         logits = get_steered_logits(
-            model,
-            prompt,
-            vector,
-            float(alpha),
-            inject_hook_name,
-            read_hook_name,
-            inj_layer,
-            read_layer,
-            prepend_bos,
-            device,
-            steer_all_tokens,
+            model=model,
+            prompt=prompt,
+            steer_vec=vector,
+            alpha=alpha,
+            inject_hook_name=inject_hook_name,
+            read_hook_name=read_hook_name,
+            inject_layer=inj_layer,
+            read_layer=read_layer,
+            prepend_bos=prepend_bos,
+            device=device,
+            steer_all_tokens=steer_all_tokens,
         )
-        logits_list.append(logits)
-    return logits_list
-
-
+        out.append(logits.to(device))
+    return torch.stack(out, dim=0)  # [n_alphas, vocab_size]
