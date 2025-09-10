@@ -51,11 +51,24 @@ class ExperimentProgressTracker:
         if not self.show_progress:
             yield from vector_types
             return
-            
+
         with tqdm(vector_types, desc=desc, unit="vector", position=2, leave=False) as pbar:
             for vector_type in pbar:
                 pbar.set_postfix(type=vector_type)
                 yield vector_type
+
+    def track_test_prompts(self, test_prompts: Sequence[T], desc: str = "Processing test prompts") -> Iterator[T]:
+        """Track progress through test prompts for current layer combination."""
+        if not self.show_progress:
+            yield from test_prompts
+            return
+
+        with tqdm(test_prompts, desc=desc, unit="prompt", position=3, leave=False) as pbar:
+            for test_prompt in pbar:
+                # Show first 50 chars of prompt for context
+                prompt_preview = str(test_prompt)[:50] + "..." if len(str(test_prompt)) > 50 else str(test_prompt)
+                pbar.set_postfix(prompt=prompt_preview)
+                yield test_prompt
     
     def track_plotting(self, results: Sequence[T], desc: str = "Generating plots") -> Iterator[T]:
         """Track progress through plotting phase."""

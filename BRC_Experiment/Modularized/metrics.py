@@ -24,72 +24,64 @@ import torch
 # ==================== LOCAL EFFECTS METRICS ====================
 
 @torch.no_grad()
-def logit_diffs(logit_list: List[torch.Tensor], choice1_id: int, choice2_id: int) -> List[float]:
+def logit_diffs(logits_batch: torch.Tensor, choice1_id: int, choice2_id: int) -> List[float]:
     """
     Compute logit differences (Choice1 - Choice2) from a list of logit tensors.
     
     Args:
-        logit_list: List of logit tensors from model forward passes
+        logits_batch: tensor of shape [batch_size, vocab_size] containing average logits for all alpha values
         choice1_id: Token ID for first choice 
         choice2_id: Token ID for second choice
     
     Returns:
         List of logit differences (Δ = z_tok1 - z_tok2)
     """
-    # Stack all logit tensors into a single batch dimension
-    logits_batch = torch.stack(logit_list)  # [batch_size, vocab_size]
     
     # Compute differences in a single operation
     diffs_batch = logits_batch[:, choice1_id] - logits_batch[:, choice2_id]  # [batch_size]
-    
     return diffs_batch.tolist()
 
 
 @torch.no_grad()
-def prob_diffs(logit_list: List[torch.Tensor], choice1_id: int, choice2_id: int) -> List[float]:
+def prob_diffs(logits_batch: torch.Tensor, choice1_id: int, choice2_id: int) -> List[float]:
     """
     Compute probability differences (Choice1 - Choice2) from logits using softmax.
-    
+
     Args:
-        logit_list: List of logit tensors from model forward passes
+        logits_batch: tensor of shape [batch_size, vocab_size] containing logits for all alpha values
         choice1_id: Token ID for first choice
         choice2_id: Token ID for second choice
-    
+
     Returns:
         List of probability differences (P(Choice1) - P(Choice2)), bounded in [-1,1]
     """
-    # Stack all logit tensors into a single batch dimension
-    logits_batch = torch.stack(logit_list)  # [batch_size, vocab_size]
-    
     # Compute softmax probabilities in a single operation
     probs_batch = torch.softmax(logits_batch, dim=-1)  # [batch_size, vocab_size]
-    
+
     # Compute probability differences in a single operation
     prob_diffs_batch = probs_batch[:, choice1_id] - probs_batch[:, choice2_id]  # [batch_size]
-    
+
     return prob_diffs_batch.tolist()
 
 
 @torch.no_grad()
-def odds_ratios(logit_list: List[torch.Tensor], choice1_id: int, choice2_id: int) -> List[float]:
+def odds_ratios(logits_batch: torch.Tensor, choice1_id: int, choice2_id: int) -> List[float]:
     """
     Compute odds ratios (e^Δ) from logit differences.
-    
+
     Human-interpretable metric showing relative likelihood. E.g., value of 7.0
     means "Token A is 7× more likely than token B."
-    
+
     Args:
-        logit_list: List of logit tensors from model forward passes
+        logits_batch: tensor of shape [batch_size, vocab_size] containing logits for all alpha values
         choice1_id: Token ID for first choice
         choice2_id: Token ID for second choice
-    
+
     formula: e^(logit_diff) = e^(z_tok1 - z_tok2)
-    
+
     Returns:
         List of odds ratios (e^(logit_diff))
     """
-    # Stack all logit tensors into a single batch dimension
-    logits_batch = torch.stack(logit_list)  # [batch_size, vocab_size]
     
     # Compute logit differences and exponentiate in a single operation
     logit_diffs_batch = logits_batch[:, choice1_id] - logits_batch[:, choice2_id]  # [batch_size]
@@ -100,105 +92,96 @@ def odds_ratios(logit_list: List[torch.Tensor], choice1_id: int, choice2_id: int
 
 @torch.no_grad()
 def rank_changes(
-    logit_list: List[torch.Tensor], 
+    logits_batch: torch.Tensor,
     choice1_id: int,
     choice2_id: int,
 ) -> Tuple[List[int], List[int]]:
     """
     Compute rank changes for choice1 and choice2 tokens across steering strengths.
     Shows how token positions move in the sorted vocabulary as steering strength varies.
-    
+
     Args:
-        logit_list: List of logit tensors from model forward passes
+        logits_batch: tensor of shape [batch_size, vocab_size] containing logits for all alpha values
         choice1_id: Token ID for first choice
         choice2_id: Token ID for second choice
-    
+
     Returns:
         Tuple of (choice1_ranks, choice2_ranks) where each is a List[int] of ranks
     """
-    # Stack all logit tensors into a single batch dimension
-    logits_batch = torch.stack(logit_list)  # [batch_size, vocab_size]
-    
     # Get ranks for both choice tokens in a single operation
     # argsort gives indices sorted by value (ascending), so we need descending for ranks
     sorted_indices = torch.argsort(logits_batch, dim=-1, descending=True)  # [batch_size, vocab_size]
-    
+
     # Create rank tensors: for each position, what rank does each token have?
     # We need to find where choice1_id and choice2_id appear in the sorted indices
     vocab_size = logits_batch.shape[-1]
     batch_size = logits_batch.shape[0]
-    
+
     # Create a tensor where ranks[b, token_id] = rank of token_id in batch b
     ranks = torch.zeros(batch_size, vocab_size, dtype=torch.long, device=logits_batch.device)
     batch_indices = torch.arange(batch_size, device=logits_batch.device).unsqueeze(1)  # [batch_size, 1]
     rank_indices = torch.arange(vocab_size, device=logits_batch.device).unsqueeze(0)   # [1, vocab_size]
-    
+
     # Fill in the ranks: ranks[batch, token_id] = rank_position
     ranks[batch_indices, sorted_indices] = rank_indices
-    
+
     # Extract ranks for our target tokens
     choice1_ranks = ranks[:, choice1_id].tolist()  # [batch_size]
     choice2_ranks = ranks[:, choice2_id].tolist()  # [batch_size]
-    
+
     return choice1_ranks, choice2_ranks
 
 
 # ==================== GLOBAL EFFECTS METRICS ====================
 
 @torch.no_grad()
-def compute_perplexity(logit_list: List[torch.Tensor], target_token_id: int) -> List[float]:
+def compute_perplexity(logits_batch: torch.Tensor, target_token_id: int) -> List[float]:
     """
     Compute perplexity for each set of logits given a target token.
-    
+
     Args:
-        logit_list: List of logit tensors
+        logits_batch: tensor of shape [batch_size, vocab_size] containing logits for all alpha values
         target_token_id: ID of the target token (e.g., he or she)
-    
+
     Returns:
         List of perplexity values
     """
-    # Stack all logit tensors into a single batch dimension
-    logits_batch = torch.stack(logit_list)  # [batch_size, vocab_size]
-    
     # Compute softmax probabilities in a single operation
     probs_batch = torch.softmax(logits_batch, dim=-1)  # [batch_size, vocab_size]
-    
+
     # Extract target token probabilities and clamp to avoid log(0)
     target_probs = probs_batch[:, target_token_id].clamp(min=1e-10)  # [batch_size]
-    
+
     # Compute negative log likelihood and perplexity in a single operation
     nll_batch = -torch.log(target_probs)  # [batch_size]
     perplexity_batch = torch.exp(nll_batch)  # [batch_size]
-    
+
     return perplexity_batch.tolist()
 
 
 @torch.no_grad()
 def kl_divergences(
-    logit_list: List[torch.Tensor], 
+    logits_batch: torch.Tensor,
     alpha_values: List[float]
 ) -> List[float]:
     """
     Compute KL divergence between baseline (α=0) and steered distributions.
-    
+
     Measures overall shift of the whole distribution, not just target tokens.
     High KL = steering perturbs many logits (broad/noisy effect).
     Low KL = steering is specific to bias direction.
-    
+
     Args:
-        logit_list: List of logit tensors from model forward passes
-        alpha_values: List of alpha values corresponding to logit_list
-    
+        logits_batch: tensor of shape [batch_size, vocab_size] containing logits for all alpha values
+        alpha_values: List of alpha values corresponding to rows in logits_batch
+
     Returns:
         List of KL divergence values D_KL(P_baseline || P_steered) (ordered from baseline to highest alpha)
-    """    
+    """
     # Find baseline index (alpha closest to 0)
     baseline_idx = min(range(len(alpha_values)), key=lambda i: abs(alpha_values[i]))
-    baseline_logits = logit_list[baseline_idx]
-    
-    # Stack all logit tensors into batch dimensions
-    logits_batch = torch.stack(logit_list)  # [batch_size, vocab_size]
-    
+    baseline_logits = logits_batch[baseline_idx]  # [vocab_size]
+
     # Create baseline batch (repeat baseline for each alpha)
     baseline_batch = baseline_logits.unsqueeze(0).expand_as(logits_batch)  # [batch_size, vocab_size]
     

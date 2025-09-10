@@ -3,10 +3,10 @@ from setuptools import setup
 setup(
     name='bias-response-curve',
     version='0.1',
-    py_modules=['bias_response_curve'],
+    packages=['BRC_Experiment', 'BRC_Experiment.Modularized'],
     entry_points={
         'console_scripts': [
-            'experiment = bias_response_curve:main',
+            'experiment = BRC_Experiment.Modularized.cli:main',
         ],
     },
     install_requires=[],  # dependencies handled by requirements.txt

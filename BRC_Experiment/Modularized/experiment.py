@@ -1,4 +1,5 @@
 from __future__ import annotations
+import torch
 from BRC_Experiment.Modularized.config import ExperimentConfig
 from BRC_Experiment.Modularized.data import load_train_dataset, load_test_dataset
 from BRC_Experiment.Modularized.model import load_model, get_choice_token_ids
@@ -56,6 +57,7 @@ class Experiment:
         # ====== PHASE 1: Setup and determine metrics to run ======
         metrics_to_run = self._get_metrics_to_run()
         progress_tracker = self.progress_tracker
+        vector_names = ["bias", "random", "orth"]
         
         # ====== PHASE 2: Iterate through layer combinations and compute metrics ======
         # Collect all metric data for global y-limits computation
@@ -82,27 +84,34 @@ class Experiment:
                 inject_hook = build_hook_name(inj_layer, self.config.inject_site)
                 read_hook = build_hook_name(read_layer, self.config.read_site)
 
-                # ====== PHASE 2a: Compute steered logits (batch computation) ======
-                # Get steered logits for all vector types using sweep_alpha (computed once, used for all metrics)
-                # Use the first test prompt for evaluation
-                test_prompt = self.test_prompts[0]
+                # ====== PHASE 2a: Compute steered logits ======
+                # Average results across all test prompts for robust evaluation
+                # Accumulate per-prompt tensors for each vector type
+                accumulated_logits = {k: [] for k in vector_names}
 
-                logits_by_vec = {}
-                for vector_name in progress_tracker.track_vector_types(["bias", "random", "orth"]):
-                    logits_by_vec[vector_name] = sweep_alpha(
-                        self.model,
-                        vectors[vector_name],
-                        self.alpha_values,
-                        test_prompt,
-                        inj_layer,
-                        read_layer,
-                        inject_hook,
-                        read_hook,
-                        self.config.prepend_bos,
-                        self.device,
-                        self.config.steer_all_tokens,
-                    )
-                bias_logits, random_logits, orth_logits = logits_by_vec["bias"], logits_by_vec["random"], logits_by_vec["orth"]
+                for test_prompt in progress_tracker.track_test_prompts(self.test_prompts):
+                    for vector_name in progress_tracker.track_vector_types(vector_names):
+                        logits_alpha_vocab = sweep_alpha(
+                            self.model,
+                            vectors[vector_name],
+                            self.alpha_values,
+                            test_prompt,
+                            inj_layer,
+                            read_layer,
+                            inject_hook,
+                            read_hook,
+                            self.config.prepend_bos,
+                            self.device,
+                            self.config.steer_all_tokens,
+                        )
+                        accumulated_logits[vector_name].append(logits_alpha_vocab)
+
+                # Average across prompts. [n_alphas, vocab_size] per vector
+                logits_by_vec = {vector_name: torch.stack(accumulated_logits[vector_name], dim=0).mean(dim=0) for vector_name in vector_names}
+
+                bias_logits   = logits_by_vec["bias"]
+                random_logits = logits_by_vec["random"]
+                orth_logits   = logits_by_vec["orth"]
 
                 # ====== PHASE 2b: Compute each metric and collect data for global limits ======
                 for metric_name, metric_func in metrics_to_run.items():
@@ -153,7 +162,8 @@ class Experiment:
                     global_y_limits[metric_name] = (y_min, y_max)
         
         # ====== PHASE 4: Plot all results with global y-limits ======
-        for inj_layer, read_layer, bias_results, random_results, orth_results, metric_name in all_results:
+        for result in progress_tracker.track_plotting(all_results, desc="Generating plots"):
+            inj_layer, read_layer, bias_results, random_results, orth_results, metric_name = result
             y_limits = global_y_limits.get(metric_name, (0, 1))  # Fallback if no data
             
             plot_and_save_brc_curves(
